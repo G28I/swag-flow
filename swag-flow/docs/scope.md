@@ -8,7 +8,7 @@ Whenever a "build it" style step actually gets underway, break it into its own s
 
 ## Stack
 
-Already decided, nothing open here: Next.js (App Router), TypeScript, Tailwind, shadcn for components (card, button, popover, loading skeleton, and whatever else the UI actually needs as it gets built), Prisma with Postgres, Clerk for auth, Arcjet in front of the endpoint, PostHog for analytics and observability.
+Already decided, nothing open here: Next.js (App Router), TypeScript, Tailwind, shadcn for components (card, button, popover, loading skeleton, and whatever else the UI actually needs as it gets built), Prisma with Postgres, Clerk for auth, Arcjet in front of the endpoint, Statsig for analytics and feature gating.
 
 ## Sketches
 
@@ -18,7 +18,7 @@ There are rough hand-drawn sketches for the arena screen, the leaderboard, and t
 
 | #   | Feature                                     | Phase      | Status      |
 | --- | ------------------------------------------- | ---------- | ----------- |
-| 1   | Connecting to a model                       | Foundation | not started |
+| 1   | Connecting to a model                       | Foundation | completed   |
 | 2   | Coding standards & tooling                  | Foundation | not started |
 | 3   | Data model                                  | Foundation | not started |
 | 4   | Design & look                               | Foundation | not started |
@@ -36,10 +36,10 @@ The Next.js project itself gets created manually first, `create-next-app`, fast 
 
 Two real decisions still open once that exists: how the app calls OpenRouter to get a model's answer, and how streaming three models back to the browser at once should actually work. This one's worth real thought: routing all three through one shared connection looks simpler, but if that one connection drops, all three answers die together, which breaks the whole point of one model failing never affecting the others. Decide both properly, then wire them, along with Prisma, Clerk, and Arcjet, into the project that already exists.
 
-PostHog should be wired in from the start too, session replay and heatmaps turned on, and tied to the signed-in user once Clerk resolves, so events are attached to a real person, not left anonymous.
+Statsig should be wired in from the start too, tied to the signed-in user once Clerk resolves, so events are attached to a real person, not left anonymous.
 
-- [ ] Decide the approach
-- [ ] Write the spec
+- [x] Decide the approach
+- [x] Write the spec
 
 ### 2. Coding standards & tooling
 
@@ -77,7 +77,7 @@ The heart of the product. One prompt goes to every selected model at once, each 
 
 Arcjet sits in front of this endpoint before any model is ever called: rate limiting, bot protection, and a shield against prompt injection, plus a real limit on how much one person can use across all three models at once, not just a limit on the endpoint overall.
 
-Every prompt sent, every answer finishing, and every vote cast should be tracked as a real PostHog event, so there's an honest funnel from prompt to answer to vote. A model failing should also be logged properly on the server, not just shown to the user and forgotten. Separately from that funnel, every actual model call should also be wrapped so PostHog captures its own real tokens, cost, and latency per call, that's PostHog's own LLM analytics, not the same thing as the funnel events or the numbers already shown on the response card.
+Every prompt sent, every answer finishing, and every vote cast should be tracked as a Statsig custom event, so there's an honest funnel from prompt to answer to vote. A model failing should also be logged properly on the server, not just shown to the user and forgotten. Separately from that funnel, every actual model call should also log its own real tokens, cost, and latency metrics to Statsig.
 
 - [ ] Decide the approach
 - [ ] Build it

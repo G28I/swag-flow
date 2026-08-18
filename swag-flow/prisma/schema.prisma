@@ -1,0 +1,64 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Thread {
+  id        String    @id @default(uuid())
+  title     String    @default("New Thread")
+  userId    String    // Clerk user ID
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  messages  Message[]
+  votes     Vote[]
+
+  @@index([userId])
+}
+
+model Message {
+  id           String    @id @default(uuid())
+  role         String    // "user" or "assistant"
+  content      String
+  model        String?   // null for user, e.g. "google/gemini-2.5-flash:free" for assistant
+  threadId     String
+  thread       Thread    @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  parentId     String?   // User message this is replying to (for assistant messages)
+  parent       Message?  @relation("MessageReplies", fields: [parentId], references: [id], onDelete: Cascade)
+  replies      Message[] @relation("MessageReplies")
+  
+  // Performance metrics for assistant responses
+  latency      Float?    // total latency in seconds
+  ttft         Float?    // time-to-first-token in seconds
+  tokensPerSec Float?
+  tokenCount   Int?
+  cost         Float?    @default(0.0) // Cost will always be $0.0000 for free tier
+  
+  createdAt    DateTime  @default(now())
+  promptVotes  Vote[]    @relation("PromptVotes")
+
+  @@index([threadId])
+  @@index([parentId])
+}
+
+model Vote {
+  id             String   @id @default(uuid())
+  userId         String   // Clerk user ID who voted
+  threadId       String
+  thread         Thread   @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  promptId       String   // The user message ID that triggered this turn
+  prompt         Message  @relation("PromptVotes", fields: [promptId], references: [id], onDelete: Cascade)
+  votedMessageId String?  // The winning assistant message ID (null if tie/skip)
+  votedModel     String?  // The winning model identifier (null if tie/skip)
+  models         String[] // All models that participated in this turn (e.g. ["google/gemini-2.5-flash:free", "meta-llama/llama-3-8b-instruct:free"])
+  createdAt      DateTime @default(now())
+
+  @@index([threadId])
+  @@index([promptId])
+  @@index([votedModel])
+}
