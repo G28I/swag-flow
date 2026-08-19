@@ -45,8 +45,8 @@ Statsig should be wired in from the start too, tied to the signed-in user once C
 
 Write down the real conventions for this project once it actually exists, then install linting, formatting, and a pre-commit hook that actually enforces them.
 
-- [ ] Decide the approach
-- [ ] Install lint, format, and whatever else is needed, and write it up in a coding-standards doc
+- [x] Decide the approach
+- [x] Install lint, format, and whatever else is needed, and write it up in a coding-standards doc
 
 ### 3. Data model
 
