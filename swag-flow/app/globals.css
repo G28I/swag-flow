@@ -3,10 +3,10 @@
 :root {
   --background: #1c1510; /* Warm dark coffee brown */
   --foreground: #f5efe6; /* Warm soft cream text */
-  --accent: #c2410c;     /* Rust accent color */
+  --accent: #c2410c; /* Rust accent color */
   --accent-hover: #ea580c;
-  --card-bg: #261e17;    /* Slightly lighter coffee brown for containers */
-  --border: #382c23;     /* Warm dark border */
+  --card-bg: #261e17; /* Slightly lighter coffee brown for containers */
+  --border: #382c23; /* Warm dark border */
 }
 
 @theme inline {

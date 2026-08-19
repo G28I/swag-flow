@@ -65,13 +65,13 @@ Once you know which SDK you need (Step 3 below), install it via the package mana
 
 Determine which protection type applies:
 
-| | **Request-based** | **Guard** |
-|---|---|---|
+|                 | **Request-based**                                                                           | **Guard**                                                                               |
+| --------------- | ------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
 | **When to use** | Code has an HTTP request object (Express `req`, Next.js `Request`, FastAPI `Request`, etc.) | No HTTP request (tool calls, MCP handlers, queue workers, background jobs, agent loops) |
-| **JS/TS SDK** | `@arcjet/next`, `@arcjet/node`, `@arcjet/fastify`, etc. | `@arcjet/guard` |
-| **Python SDK** | `arcjet` (with `arcjet()` / `arcjet_sync()`) | `arcjet` (with `launch_arcjet()` / `launch_arcjet_sync()`) |
-| **Go SDK** | `github.com/arcjet/arcjet-go` (with `NewClient`) | `github.com/arcjet/arcjet-go` (with `NewGuardClient`) |
-| **Entry point** | `protect(request)` / `Protect(ctx, r)` | `guard(label, rules)` / `Guard(ctx, request)` |
+| **JS/TS SDK**   | `@arcjet/next`, `@arcjet/node`, `@arcjet/fastify`, etc.                                     | `@arcjet/guard`                                                                         |
+| **Python SDK**  | `arcjet` (with `arcjet()` / `arcjet_sync()`)                                                | `arcjet` (with `launch_arcjet()` / `launch_arcjet_sync()`)                              |
+| **Go SDK**      | `github.com/arcjet/arcjet-go` (with `NewClient`)                                            | `github.com/arcjet/arcjet-go` (with `NewGuardClient`)                                   |
+| **Entry point** | `protect(request)` / `Protect(ctx, r)`                                                      | `guard(label, rules)` / `Guard(ctx, request)`                                           |
 
 A single project can use both — e.g. request-based on API routes and guard on agent tool calls. If the project already uses Vercel AI SDK, Vercel Eve, Mastra, or LangChain, prefer the versioned Guard wrappers in the language reference over hand-wrapping every tool.
 
@@ -79,7 +79,7 @@ A single project can use both — e.g. request-based on API routes and guard on 
 
 - **MCP servers**: the word "server" is misleading. MCP tools don't receive HTTP requests — they're invoked by an MCP client over stdio or SSE. Use **Guard**, not request-based.
 - **Background jobs / queue consumers**: no HTTP request at the protection site. Use **Guard**.
-- **Server actions / RPC over HTTP** (Next.js server actions, tRPC, etc.): there *is* an HTTP request underneath. Use **request-based**.
+- **Server actions / RPC over HTTP** (Next.js server actions, tRPC, etc.): there _is_ an HTTP request underneath. Use **request-based**.
 - **Agent tool calls inside a request handler**: if you want to limit per-user-per-route, request-based is fine. If you want per-tool budgets independent of any HTTP boundary, use Guard at the tool call site.
 
 Read the appropriate reference:
@@ -98,17 +98,19 @@ These references explain architectural decisions and patterns that can't be infe
 Follow the patterns in the reference file from Step 3. Key principles:
 
 #### Request-based (HTTP routes):
+
 - Create shared clients outside handlers and include Shield as a base rule. Use the exact constructor and rule names from the language reference.
 - In JavaScript/TypeScript, use `withRule()` for route-specific rules and `decision.isDenied()` for the result.
 - In Python, pass the complete rule list to `arcjet()` / `arcjet_sync()`; there is no `with_rule()` client method. Check `decision.is_denied()`.
 - In Go, create one `NewClient` at package scope. `WithRule()` derives route-specific clients and returns `(*Client, error)`, so handle initialization errors. Check `decision.IsDenied()`.
 - Call `protect()` / `Protect()` inside each route handler (not in app-level middleware), once per request.
-- Map denial reasons to HTTP responses. Only branch on reasons that produce a *different* response — there is no point in a Shield-specific arm that returns the same status as the default 403.
+- Map denial reasons to HTTP responses. Only branch on reasons that produce a _different_ response — there is no point in a Shield-specific arm that returns the same status as the default 403.
 - Put the language's `userId` characteristic selector on the specific rule that needs it, then pass a **trusted, authenticated** user ID at protection time. Never rate limit by a client-controlled header unless a trusted proxy strips and rewrites it.
 - If the application already has a trusted client IP, pass it explicitly: `ipSrc` (JS), `ip_src` (Python — also set `disable_automatic_ip_detection=True`), `WithIPSrc` (Go). The SDK trusts the value; do not pass a client-controlled header.
 - `protect()` accepts nested-JSON `metadata` (same shape as Guard). It does not affect fingerprinting. Do not put secrets or PII in it. When present, request decisions also expose optional IP threat intelligence (`decision.ip.threat` / `ip_details.threat` / `IP.Threat`).
 
 #### Guard (non-HTTP code):
+
 - Client at module scope with `launchArcjet()` (JS) or `launch_arcjet()` / `launch_arcjet_sync()` (Python — pick async vs sync to match the function you're protecting).
 - In Go, create one `NewGuardClient` at package scope.
 - Rules declared at module scope. Give each rule a meaningful `label` so they show up usefully in the Console.
@@ -118,7 +120,7 @@ Follow the patterns in the reference file from Step 3. Key principles:
 - **`capture()` records what happened** after an action (refund issued, tool completed). It is visibility data, never a security decision — it does not deny and never sets `hasFailedOpen()`. Call `flush()` on shutdown so the last batch is not lost. On serverless, pass a platform `waitUntil` (JS) or flush at the end of the invocation.
 - **Optional registration (JS/Python only):** `registerArcjet` / `register_arcjet` is a separate call from launch. It enables free `guard()` / `capture()` / `flush()` when you cannot thread a client. Free `guard()` fail-opens if nothing is registered — check `hasFailedOpen()` / `has_failed_open()`; do not treat that ALLOW as a pass. Go has no registration API; pass the client. Prefer an explicit client everywhere you can.
 - **Framework wrappers** (JS `@arcjet/guard/vercel-ai/v7`, `@arcjet/guard/vercel-eve/v0`, `@arcjet/guard/mastra/v1`; Python `arcjet.guard.langchain`) fail closed by default when Guard is unavailable. Import the versioned path — unversioned aliases do not resolve.
-- **Branch on which rule denied**, not just on `DENY`. Use the per-rule accessors (e.g. `userLimit.deniedResult(decision)` for retry-after info) or the flat reason string (`decision.reason === "PROMPT_INJECTION"` in JS, `decision.reason == "PROMPT_INJECTION"` in Python) so the error you surface to the caller tells them *why* — "rate limited, retry in 12s" vs "input flagged as prompt injection" — instead of a generic "blocked." Note: guard's `decision.reason` is a flat string literal, unlike the request-based SDK's tagged-helper API.
+- **Branch on which rule denied**, not just on `DENY`. Use the per-rule accessors (e.g. `userLimit.deniedResult(decision)` for retry-after info) or the flat reason string (`decision.reason === "PROMPT_INJECTION"` in JS, `decision.reason == "PROMPT_INJECTION"` in Python) so the error you surface to the caller tells them _why_ — "rate limited, retry in 12s" vs "input flagged as prompt injection" — instead of a generic "blocked." Note: guard's `decision.reason` is a flat string literal, unlike the request-based SDK's tagged-helper API.
 - Every rate-limit rule needs a `key` and a `bucket`:
   - **Per-user context** (agent tool calls inside a logged-in session, queue jobs with a `user_id`): use the user/session id as the key.
   - **No user context** (stdio MCP server, single-tenant worker): use a stable identifier you control — instance id, deployment name, or a literal like `"default"`. Just be explicit.
@@ -126,7 +128,7 @@ Follow the patterns in the reference file from Step 3. Key principles:
 
 #### Conventions outside the Arcjet flow
 
-For everything that *isn't* an Arcjet-specific decision — dev scripts, file/module layout, named-vs-default exports, comment style, env-file naming, type hints, error class patterns — match the project's existing conventions. If the project has no convention yet, default to modern best practice for the language. This skill is opinionated about *where Arcjet goes* and *how its API is used*; it shouldn't reach further than that.
+For everything that _isn't_ an Arcjet-specific decision — dev scripts, file/module layout, named-vs-default exports, comment style, env-file naming, type hints, error class patterns — match the project's existing conventions. If the project has no convention yet, default to modern best practice for the language. This skill is opinionated about _where Arcjet goes_ and _how its API is used_; it shouldn't reach further than that.
 
 ### Step 5: Verify Decisions
 

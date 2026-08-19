@@ -16,7 +16,7 @@ Requires `@arcjet/guard` ≥ 1.4.0 for basic Guard protection. Features called o
 
 | Runtime            | Minimum version          |
 | ------------------ | ------------------------ |
-| Node.js            | `>=22.21.0 <23 || >=24.5.0` |
+| Node.js            | `>=22.21.0 <23           |     | >=24.5.0` |
 | Bun                | 1.3.0                    |
 | Deno               | `stable` / `lts`         |
 | Cloudflare Workers | compat date `2025-09-01` |
@@ -51,7 +51,7 @@ import { tokenBucket, detectPromptInjection } from "@arcjet/guard";
 
 // WORKS but awkward — no stable reference for result inspection
 function handleTool() {
-  const limit = tokenBucket({ /* config */ }); // hard to call limit.deniedResult() later
+  const limit = tokenBucket({/* config */}); // hard to call limit.deniedResult() later
 }
 
 // BETTER — declare rules at module scope, dynamically choose which to apply
@@ -73,10 +73,7 @@ const piRule = detectPromptInjection();
 
 function toolRules(userId: string, role: string, text: string) {
   const limit = role === "admin" ? adminLimit : memberLimit;
-  return [
-    limit({ key: userId, requested: 1 }),
-    piRule(text),
-  ];
+  return [limit({ key: userId, requested: 1 }), piRule(text)];
 }
 ```
 
@@ -129,16 +126,17 @@ See the "Rate Limiting Strategies" section in the main skill for a comparison of
 Key guard-specific notes: all rate limit rules require a `key` parameter at call time (user ID, session ID, API key) — without it, limits are global across all callers. They also need a `bucket` name to avoid collisions between different rules.
 
 **Picking a `key` when there's no user:** Some call sites have no per-user context — e.g. a stdio MCP server where the client is the only caller, or a single-tenant queue worker. Don't try to fake it by passing an empty string. Use whatever identifier actually matches the scope of the limit:
+
 - single-tenant worker → the deployment name or env (`process.env.HOSTNAME ?? "default"`)
 - stdio MCP server → the MCP client/session id if exposed by the SDK, otherwise the process identity
 - shared limit across all callers → a stable literal like `"global"`, and add a comment explaining why
-The point is to be intentional. A wrong-but-explicit `key` is much easier to fix than a missing one.
+  The point is to be intentional. A wrong-but-explicit `key` is much easier to fix than a missing one.
 
 ## Content Scanning Rules
 
 ### Prompt injection detection
 
-Use `detectPromptInjection()` on any untrusted text before it reaches a model or is used as a tool argument. This catches jailbreaks, role-play escapes, and instruction overrides. Also useful on tool call *results* when the tool fetches content from untrusted sources.
+Use `detectPromptInjection()` on any untrusted text before it reaches a model or is used as a tool argument. This catches jailbreaks, role-play escapes, and instruction overrides. Also useful on tool call _results_ when the tool fetches content from untrusted sources.
 
 ### Sensitive information detection
 
@@ -187,10 +185,10 @@ if (decision.conclusion === "DENY") {
 
 `guard()` never throws for runtime degradation — a transport failure or a rule that couldn't be processed comes back as a fail-open `"ALLOW"` decision, not an exception. Two distinct signals (available from **`@arcjet/guard` 1.6.0**) tell you what happened:
 
-- `decision.hasFailedOpen()` — `true` when the decision is `"ALLOW"` *only* because a rule or the decision itself could not be processed. This is the **fail-closed gate**: if the operation is sensitive enough that a degraded Arcjet signal should block rather than allow, branch on this and deny. `decision.errorResults()` returns the errored results (each with a `code`/`message`) for logging.
+- `decision.hasFailedOpen()` — `true` when the decision is `"ALLOW"` _only_ because a rule or the decision itself could not be processed. This is the **fail-closed gate**: if the operation is sensitive enough that a degraded Arcjet signal should block rather than allow, branch on this and deny. `decision.errorResults()` returns the errored results (each with a `code`/`message`) for logging.
 - `decision.warnings` — request-validation diagnostics (e.g. an invalid metadata key that was stripped). The decision is still valid and trustworthy; warnings never change the conclusion. Log them so the config gets fixed, but don't block on them.
 
-To attribute a failure to a *specific* rule rather than scanning the whole decision, each rule also exposes `.errorResult(decision)` (new in **`@arcjet/guard` 1.6.0**) — the mirror of `.deniedResult(decision)`. It returns that rule's `RuleResultError` (with `code`/`message`) if that rule errored, else `null`. Use it when only one rule failing open is actually unsafe (e.g. the prompt-injection scan) while others failing open is tolerable.
+To attribute a failure to a _specific_ rule rather than scanning the whole decision, each rule also exposes `.errorResult(decision)` (new in **`@arcjet/guard` 1.6.0**) — the mirror of `.deniedResult(decision)`. It returns that rule's `RuleResultError` (with `code`/`message`) if that rule errored, else `null`. Use it when only one rule failing open is actually unsafe (e.g. the prompt-injection scan) while others failing open is tolerable.
 
 ```typescript
 const decision = await arcjet.guard({ label: "tools.get-weather", rules });
@@ -246,11 +244,11 @@ For tests, `registerTestClient()` from `@arcjet/guard/testing` records calls and
 
 Import the versioned path. Unversioned aliases (`@arcjet/guard/vercel-ai`, `/vercel-eve`, `/mastra`) do not resolve. Wrappers fail closed by default (`onGuardError: "deny"`).
 
-| Integration | Import | Use when |
-| --- | --- | --- |
-| Vercel AI SDK v7 | `@arcjet/guard/vercel-ai/v7` | Authored `tool({ execute })`. `guardTool` + `aiToolsContext(createAgentContext(), tools)`. Also exports `guardAction`, `captureAction`, `securityMetadata`. Wrapped tools cannot already declare `contextSchema`. |
-| Vercel Eve v0 | `@arcjet/guard/vercel-eve/v0` | Eve agents. `guardInbound` on channels (only place to decline a turn before it starts). `guardApproval` on OpenAPI/MCP connections (no local `execute`). `arcjetHooks` is observe-only. Eve needs Node ≥ 24. |
-| Mastra v1 | `@arcjet/guard/mastra/v1` | On current docs/`main`, not published 1.10.0. `guardProcessor` for inbound/outbound text (no `guardInbound`). `guardTool` for authored tools. `guardHooks` for unwrapped MCP/workspace tools (`beforeToolCall` can deny). No `guardApproval` — Mastra `requireApproval` is human HITL. Do not also wrap with `vercel-ai/v7`. |
+| Integration      | Import                        | Use when                                                                                                                                                                                                                                                                                                                     |
+| ---------------- | ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Vercel AI SDK v7 | `@arcjet/guard/vercel-ai/v7`  | Authored `tool({ execute })`. `guardTool` + `aiToolsContext(createAgentContext(), tools)`. Also exports `guardAction`, `captureAction`, `securityMetadata`. Wrapped tools cannot already declare `contextSchema`.                                                                                                            |
+| Vercel Eve v0    | `@arcjet/guard/vercel-eve/v0` | Eve agents. `guardInbound` on channels (only place to decline a turn before it starts). `guardApproval` on OpenAPI/MCP connections (no local `execute`). `arcjetHooks` is observe-only. Eve needs Node ≥ 24.                                                                                                                 |
+| Mastra v1        | `@arcjet/guard/mastra/v1`     | On current docs/`main`, not published 1.10.0. `guardProcessor` for inbound/outbound text (no `guardInbound`). `guardTool` for authored tools. `guardHooks` for unwrapped MCP/workspace tools (`beforeToolCall` can deny). No `guardApproval` — Mastra `requireApproval` is human HITL. Do not also wrap with `vercel-ai/v7`. |
 
 See https://docs.arcjet.com/guards/framework-integrations/, https://docs.arcjet.com/guards/vercel-eve/, and https://docs.arcjet.com/guards/mastra/.
 

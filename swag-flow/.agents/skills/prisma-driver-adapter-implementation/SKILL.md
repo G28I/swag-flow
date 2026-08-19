@@ -22,31 +22,31 @@ Use this guide with the exact `@prisma/driver-adapter-utils` version installed b
 
 ```typescript
 interface SqlDriverAdapterFactory extends AdapterInfo {
-  connect(): Promise<SqlDriverAdapter>
+  connect(): Promise<SqlDriverAdapter>;
 }
 
 interface SqlMigrationAwareDriverAdapterFactory extends SqlDriverAdapterFactory {
-  connectToShadowDb(): Promise<SqlDriverAdapter>
+  connectToShadowDb(): Promise<SqlDriverAdapter>;
 }
 
 interface SqlDriverAdapter extends AdapterInfo {
-  queryRaw(query: SqlQuery): Promise<SqlResultSet>
-  executeRaw(query: SqlQuery): Promise<number>
-  executeScript(script: string): Promise<void>
-  startTransaction(isolationLevel?: IsolationLevel): Promise<Transaction>
-  getConnectionInfo?(): ConnectionInfo
-  dispose(): Promise<void>
+  queryRaw(query: SqlQuery): Promise<SqlResultSet>;
+  executeRaw(query: SqlQuery): Promise<number>;
+  executeScript(script: string): Promise<void>;
+  startTransaction(isolationLevel?: IsolationLevel): Promise<Transaction>;
+  getConnectionInfo?(): ConnectionInfo;
+  dispose(): Promise<void>;
 }
 
 interface Transaction extends AdapterInfo {
-  readonly options: { usePhantomQuery: boolean }
-  queryRaw(query: SqlQuery): Promise<SqlResultSet>
-  executeRaw(query: SqlQuery): Promise<number>
-  commit(): Promise<void>
-  rollback(): Promise<void>
-  createSavepoint?(name: string): Promise<void>
-  rollbackToSavepoint?(name: string): Promise<void>
-  releaseSavepoint?(name: string): Promise<void>
+  readonly options: { usePhantomQuery: boolean };
+  queryRaw(query: SqlQuery): Promise<SqlResultSet>;
+  executeRaw(query: SqlQuery): Promise<number>;
+  commit(): Promise<void>;
+  rollback(): Promise<void>;
+  createSavepoint?(name: string): Promise<void>;
+  rollbackToSavepoint?(name: string): Promise<void>;
+  releaseSavepoint?(name: string): Promise<void>;
 }
 ```
 
@@ -54,15 +54,15 @@ interface Transaction extends AdapterInfo {
 
 ## Priority rules
 
-| Priority | Rule | Impact |
-|----------|------|--------|
-| CRITICAL | One dedicated connection per transaction | Prevents interleaving and leaks |
-| CRITICAL | `commit`/`rollback` are lifecycle cleanup hooks | Prevents duplicate COMMIT/ROLLBACK |
-| CRITICAL | Savepoints live on `Transaction`, not adapter-global depth | Makes nested scopes connection-local |
-| CRITICAL | Preserve original database error code/message | Enables useful `P2039` fallback |
-| HIGH | Map arguments and result metadata exactly | Prevents silent value corruption |
-| HIGH | Shadow databases are isolated and always cleaned up | Makes Migrate safe |
-| HIGH | Dispose only resources the adapter owns | Prevents shutting down caller-owned pools |
+| Priority | Rule                                                       | Impact                                    |
+| -------- | ---------------------------------------------------------- | ----------------------------------------- |
+| CRITICAL | One dedicated connection per transaction                   | Prevents interleaving and leaks           |
+| CRITICAL | `commit`/`rollback` are lifecycle cleanup hooks            | Prevents duplicate COMMIT/ROLLBACK        |
+| CRITICAL | Savepoints live on `Transaction`, not adapter-global depth | Makes nested scopes connection-local      |
+| CRITICAL | Preserve original database error code/message              | Enables useful `P2039` fallback           |
+| HIGH     | Map arguments and result metadata exactly                  | Prevents silent value corruption          |
+| HIGH     | Shadow databases are isolated and always cleaned up        | Makes Migrate safe                        |
+| HIGH     | Dispose only resources the adapter owns                    | Prevents shutting down caller-owned pools |
 
 ## Query implementation
 
@@ -70,8 +70,8 @@ interface Transaction extends AdapterInfo {
 
 ```typescript
 class ExampleQueryable {
-  readonly provider = 'postgres' as const
-  readonly adapterName = '@acme/adapter-example'
+  readonly provider = "postgres" as const;
+  readonly adapterName = "@acme/adapter-example";
 
   constructor(protected readonly connection: DriverConnection) {}
 
@@ -79,19 +79,17 @@ class ExampleQueryable {
     try {
       const result = await this.connection.query({
         text: query.sql,
-        values: query.args.map((value, index) =>
-          mapArg(value, query.argTypes[index]),
-        ),
-        rowMode: 'array',
-      })
+        values: query.args.map((value, index) => mapArg(value, query.argTypes[index])),
+        rowMode: "array",
+      });
 
       return {
         columnNames: result.fields.map((field) => field.name),
         columnTypes: result.fields.map(mapColumnType),
         rows: result.rows,
-      }
+      };
     } catch (error) {
-      throwAdapterError(error)
+      throwAdapterError(error);
     }
   }
 
@@ -99,11 +97,11 @@ class ExampleQueryable {
     try {
       const result = await this.connection.execute(
         query.sql,
-        query.args.map((value, index) => mapArg(value, query.argTypes[index])),
-      )
-      return result.rowsAffected ?? 0
+        query.args.map((value, index) => mapArg(value, query.argTypes[index]))
+      );
+      return result.rowsAffected ?? 0;
     } catch (error) {
-      throwAdapterError(error)
+      throwAdapterError(error);
     }
   }
 }
@@ -157,36 +155,43 @@ Prisma coordinates the SQL `COMMIT`/`ROLLBACK` through `executeRaw`. The transac
 
 ```typescript
 class ExampleTransaction extends ExampleQueryable implements Transaction {
-  readonly options = { usePhantomQuery: false }
-  #closed = false
+  readonly options = { usePhantomQuery: false };
+  #closed = false;
 
-  constructor(connection: DriverConnection, private readonly release: () => void) {
-    super(connection)
+  constructor(
+    connection: DriverConnection,
+    private readonly release: () => void
+  ) {
+    super(connection);
   }
 
-  async commit() { this.finish() }
-  async rollback() { this.finish() }
+  async commit() {
+    this.finish();
+  }
+  async rollback() {
+    this.finish();
+  }
 
   private finish() {
-    if (this.#closed) return
-    this.#closed = true
-    this.release()
+    if (this.#closed) return;
+    this.#closed = true;
+    this.release();
   }
 
   async createSavepoint(name: string) {
-    await this.control(`SAVEPOINT ${safeSavepoint(name)}`)
+    await this.control(`SAVEPOINT ${safeSavepoint(name)}`);
   }
 
   async rollbackToSavepoint(name: string) {
-    await this.control(`ROLLBACK TO SAVEPOINT ${safeSavepoint(name)}`)
+    await this.control(`ROLLBACK TO SAVEPOINT ${safeSavepoint(name)}`);
   }
 
   async releaseSavepoint(name: string) {
-    await this.control(`RELEASE SAVEPOINT ${safeSavepoint(name)}`)
+    await this.control(`RELEASE SAVEPOINT ${safeSavepoint(name)}`);
   }
 
   private async control(sql: string) {
-    await this.executeRaw({ sql, args: [], argTypes: [] })
+    await this.executeRaw({ sql, args: [], argTypes: [] });
   }
 }
 ```
@@ -206,34 +211,34 @@ import {
   DriverAdapterError,
   type Error as DriverAdapterErrorObject,
   type MappedError,
-} from '@prisma/driver-adapter-utils'
+} from "@prisma/driver-adapter-utils";
 
 function convertDriverError(error: DatabaseError): DriverAdapterErrorObject {
   return {
     originalCode: String(error.code),
     originalMessage: error.message,
     ...mapKnownOrRaw(error),
-  }
+  };
 }
 
 function mapKnownOrRaw(error: DatabaseError): MappedError {
-  if (error.code === '23505') {
-    return { kind: 'UniqueConstraintViolation', constraint: parsedConstraint(error) }
+  if (error.code === "23505") {
+    return { kind: "UniqueConstraintViolation", constraint: parsedConstraint(error) };
   }
   return {
-    kind: 'postgres',
-    code: String(error.code ?? 'N/A'),
-    severity: error.severity ?? 'N/A',
+    kind: "postgres",
+    code: String(error.code ?? "N/A"),
+    severity: error.severity ?? "N/A",
     message: error.message,
     detail: error.detail,
     column: error.column,
     hint: error.hint,
-  }
+  };
 }
 
 function throwAdapterError(error: unknown): never {
-  if (!isDatabaseError(error)) throw error
-  throw new DriverAdapterError(convertDriverError(error))
+  if (!isDatabaseError(error)) throw error;
+  throw new DriverAdapterError(convertDriverError(error));
 }
 ```
 

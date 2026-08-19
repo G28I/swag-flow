@@ -59,8 +59,6 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Access denied" }, { status: 403 });
     }
 
-
-
     let targetThreadId = threadId;
 
     // 4. Create thread if not provided
@@ -105,11 +103,8 @@ export async function POST(req: NextRequest) {
       threadId: targetThreadId,
       messageId: userMessage.id,
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Error creating prompt:", error);
-    return NextResponse.json(
-      { error: "An unexpected error occurred." },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "An unexpected error occurred." }, { status: 500 });
   }
 }

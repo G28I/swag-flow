@@ -95,7 +95,7 @@ export async function POST(req: NextRequest) {
           const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
             method: "POST",
             headers: {
-              "Authorization": `Bearer ${env.OPENROUTER_API_KEY}`,
+              Authorization: `Bearer ${env.OPENROUTER_API_KEY}`,
               "Content-Type": "application/json",
               "HTTP-Referer": "http://localhost:3000",
               "X-Title": "LLM Arena",
@@ -241,11 +241,13 @@ export async function POST(req: NextRequest) {
               )
             );
             controller.close();
-          } catch (streamError: any) {
+          } catch (streamError: unknown) {
             throw streamError;
           }
-        } catch (err: any) {
+        } catch (err: unknown) {
           console.error("Error during streaming process:", err);
+
+          const errorMessage = err instanceof Error ? err.message : "Unknown error";
 
           // Update database to record the failure
           await prisma.message.update({
@@ -263,7 +265,7 @@ export async function POST(req: NextRequest) {
             threadId,
             model,
             messageId: assistantMessage.id,
-            error: err.message || "Unknown error",
+            error: errorMessage,
           });
 
           // Inform client of the error
@@ -284,14 +286,11 @@ export async function POST(req: NextRequest) {
       headers: {
         "Content-Type": "text/event-stream",
         "Cache-Control": "no-cache, no-transform",
-        "Connection": "keep-alive",
+        Connection: "keep-alive",
       },
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Error in stream route handler:", error);
-    return NextResponse.json(
-      { error: "An unexpected server error occurred." },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "An unexpected server error occurred." }, { status: 500 });
   }
 }

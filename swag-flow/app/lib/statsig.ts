@@ -23,7 +23,7 @@ export async function initStatsig() {
 export async function logStatsigEvent(
   userId: string,
   eventName: string,
-  metadata?: Record<string, any>
+  metadata?: Record<string, string | number | boolean | null | undefined>
 ) {
   try {
     if (env.STATSIG_SECRET_KEY === "secret-placeholder") {

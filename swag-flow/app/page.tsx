@@ -67,9 +67,9 @@ export default function Home() {
       models.forEach(({ hook, name }) => {
         hook.startStream(currentThreadId, parentId, name);
       });
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Submission error:", err);
-      setError(err.message || "Failed to submit prompt. Please try again.");
+      setError(err instanceof Error ? err.message : "Failed to submit prompt. Please try again.");
     } finally {
       setIsSubmitting(false);
     }
@@ -110,12 +110,16 @@ export default function Home() {
             Compare Models Concurrently
           </h1>
           <p className="text-sm text-foreground/75">
-            Submit a prompt to watch three AI models answer in real-time. Metrics are measured per call.
+            Submit a prompt to watch three AI models answer in real-time. Metrics are measured per
+            call.
           </p>
         </div>
 
         {/* Prompt Input Section */}
-        <form onSubmit={handleSubmit} className="flex flex-col gap-4 p-5 rounded-2xl border border-border-custom bg-card-bg shadow-lg">
+        <form
+          onSubmit={handleSubmit}
+          className="flex flex-col gap-4 p-5 rounded-2xl border border-border-custom bg-card-bg shadow-lg"
+        >
           <div className="flex flex-col gap-2">
             <label htmlFor="prompt-box" className="text-sm font-semibold text-foreground/80">
               Your Prompt
@@ -156,8 +160,19 @@ export default function Home() {
               {isSubmitting ? (
                 <>
                   <svg className="animate-spin h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                    <circle
+                      className="opacity-25"
+                      cx="12"
+                      cy="12"
+                      r="10"
+                      stroke="currentColor"
+                      strokeWidth="4"
+                    />
+                    <path
+                      className="opacity-75"
+                      fill="currentColor"
+                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                    />
                   </svg>
                   Initializing...
                 </>
@@ -173,22 +188,13 @@ export default function Home() {
         {/* Results Panels */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           {/* Model Card A */}
-          <ModelResponseCard
-            modelName="Gemini 2.5 Flash (Free)"
-            hook={modelA}
-          />
+          <ModelResponseCard modelName="Gemini 2.5 Flash (Free)" hook={modelA} />
 
           {/* Model Card B */}
-          <ModelResponseCard
-            modelName="Llama 3 8B Instruct (Free)"
-            hook={modelB}
-          />
+          <ModelResponseCard modelName="Llama 3 8B Instruct (Free)" hook={modelB} />
 
           {/* Model Card C */}
-          <ModelResponseCard
-            modelName="Mistral 7B Instruct (Free)"
-            hook={modelC}
-          />
+          <ModelResponseCard modelName="Mistral 7B Instruct (Free)" hook={modelC} />
         </div>
       </main>
     </div>

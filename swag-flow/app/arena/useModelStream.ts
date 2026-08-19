@@ -87,9 +87,11 @@ export function useModelStream() {
           }
         }
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error(`Stream error for model ${model}:`, err);
-      setError(err.message || "A streaming error occurred. Please try again.");
+      setError(
+        err instanceof Error ? err.message : "A streaming error occurred. Please try again."
+      );
     } finally {
       setIsStreaming(false);
     }

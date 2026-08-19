@@ -124,7 +124,7 @@ Key guard-specific notes: all rate limit rules require a `key` parameter at call
 
 ### Prompt injection detection
 
-Use `DetectPromptInjection()` on any untrusted text before it reaches a model or is used as a tool argument. Also useful on tool call *results* when the tool fetches content from untrusted sources.
+Use `DetectPromptInjection()` on any untrusted text before it reaches a model or is used as a tool argument. Also useful on tool call _results_ when the tool fetches content from untrusted sources.
 
 ### Sensitive information detection
 
@@ -184,10 +184,10 @@ if decision.conclusion == "DENY":
 
 `guard()` never raises for runtime degradation — a transport failure or a rule that couldn't be processed comes back as a fail-open `"ALLOW"` decision, not an exception. (Programmer errors — an invalid label, a misconfigured rule — still raise `ArcjetError`.) Two distinct signals (available from **`arcjet` 0.9.0**) tell you what happened:
 
-- `decision.has_failed_open()` — `True` when the decision is `"ALLOW"` *only* because a rule or the decision itself could not be processed. This is the **fail-closed gate**: if the operation is sensitive enough that a degraded Arcjet signal should block rather than allow, branch on this and deny. `decision.error_results()` returns the errored results (each with a `code`/`message`) for logging.
+- `decision.has_failed_open()` — `True` when the decision is `"ALLOW"` _only_ because a rule or the decision itself could not be processed. This is the **fail-closed gate**: if the operation is sensitive enough that a degraded Arcjet signal should block rather than allow, branch on this and deny. `decision.error_results()` returns the errored results (each with a `code`/`message`) for logging.
 - `decision.warnings` — request-validation diagnostics (e.g. an invalid metadata key that was stripped). The decision is still valid and trustworthy; warnings never change the conclusion. Log them so the config gets fixed, but don't block on them.
 
-To attribute a failure to a *specific* rule rather than scanning the whole decision, each rule also exposes `.error_result(decision)` (new in **`arcjet` 0.9.0**) — the mirror of `.denied_result(decision)`. It returns that rule's `RuleResultError` (with `code`/`message`) if that rule errored, else `None`. Use it when only one rule failing open is actually unsafe (e.g. the prompt-injection scan) while others failing open is tolerable.
+To attribute a failure to a _specific_ rule rather than scanning the whole decision, each rule also exposes `.error_result(decision)` (new in **`arcjet` 0.9.0**) — the mirror of `.denied_result(decision)`. It returns that rule's `RuleResultError` (with `code`/`message`) if that rule errored, else `None`. Use it when only one rule failing open is actually unsafe (e.g. the prompt-injection scan) while others failing open is tolerable.
 
 ```python
 decision = await arcjet.guard(label="tools.get-weather", rules=rules)
@@ -211,6 +211,7 @@ Available from **`arcjet` 0.9.0**: standard `HTTP_PROXY`, `HTTPS_PROXY`, and `NO
 ## Async vs Sync
 
 The package provides both variants:
+
 - `launch_arcjet` / `await arcjet.guard(...)` — async, use in `async def` functions
 - `launch_arcjet_sync` / `arcjet.guard(...)` — sync, use in regular `def` functions
 

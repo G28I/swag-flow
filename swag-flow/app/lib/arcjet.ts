@@ -16,9 +16,9 @@ const sharedRules = [
   // Rate limit configuration
   tokenBucket({
     mode: "LIVE",
-    refillRate: 10,  // refill 10 tokens per minute
-    interval: "1m",  // interval of 1 minute
-    capacity: 15,    // allow up to 15 tokens (each prompt uses 3 tokens for 3 models)
+    refillRate: 10, // refill 10 tokens per minute
+    interval: "1m", // interval of 1 minute
+    capacity: 15, // allow up to 15 tokens (each prompt uses 3 tokens for 3 models)
   }),
 ];
 
