@@ -4,6 +4,7 @@ import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
 const isPublicRoute = createRouteMatcher([
   "/",
   "/models",
+  "/leaderboard",
   // We can make endpoints public in middleware, and enforce auth inside the handlers
   "/api/arena/stream",
   "/api/arena/prompt",
