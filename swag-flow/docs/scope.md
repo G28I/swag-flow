@@ -19,8 +19,8 @@ There are rough hand-drawn sketches for the arena screen, the leaderboard, and t
 | #   | Feature                                     | Phase      | Status      |
 | --- | ------------------------------------------- | ---------- | ----------- |
 | 1   | Connecting to a model                       | Foundation | completed   |
-| 2   | Coding standards & tooling                  | Foundation | not started |
-| 3   | Data model                                  | Foundation | not started |
+| 2   | Coding standards & tooling                  | Foundation | completed   |
+| 3   | Data model                                  | Foundation | completed   |
 | 4   | Design & look                               | Foundation | not started |
 | 5   | Model picker                                | Slice 1    | not started |
 | 6   | Send a prompt, parallel streams, and voting | Slice 1    | not started |
@@ -52,8 +52,8 @@ Write down the real conventions for this project once it actually exists, then i
 
 The core things every feature depends on: users tied to Clerk, threads, each model's own messages inside a thread, and votes. A vote should only ever be possible on a turn where two or more models actually answered.
 
-- [ ] Decide the approach
-- [ ] Build it
+- [x] Decide the approach
+- [x] Build it
 
 ### 4. Design & look
 
