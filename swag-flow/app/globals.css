@@ -1,12 +1,25 @@
 @import "tailwindcss";
 
 :root {
-  --background: #1c1510; /* Warm dark coffee brown */
-  --foreground: #f5efe6; /* Warm soft cream text */
-  --accent: #c2410c; /* Rust accent color */
-  --accent-hover: #ea580c;
-  --card-bg: #261e17; /* Slightly lighter coffee brown for containers */
-  --border: #382c23; /* Warm dark border */
+  /* Light Mode (default) */
+  --background: #fbf9f6;
+  --foreground: #3c2a21;
+  --accent: #c2410c;
+  --accent-hover: #9a3412;
+  --card-bg: #f4efe9;
+  --border: #e6dcd3;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    /* Dark Mode override */
+    --background: #120a06;
+    --foreground: #f5efe6;
+    --accent: #ea580c;
+    --accent-hover: #f97316;
+    --card-bg: #1c120c;
+    --border: #2e1f16;
+  }
 }
 
 @theme inline {
