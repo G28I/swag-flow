@@ -6,46 +6,22 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint",
-    "format": "prettier --write .",
-    "prepare": "cd .. && npx --prefix swag-flow husky swag-flow/.husky"
+    "lint": "eslint"
   },
   "dependencies": {
-    "@arcjet/next": "^1.10.0",
-    "@clerk/nextjs": "^7.7.6",
-    "@prisma/adapter-pg": "^7.9.1",
-    "@prisma/client": "^7.9.1",
-    "lucide-react": "^1.33.0",
     "next": "16.3.1",
-    "pg": "^8.23.0",
     "react": "19.2.8",
-    "react-dom": "19.2.8",
-    "statsig-node": "^6.5.2"
+    "react-dom": "19.2.8"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
-    "@types/pg": "^8.21.0",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.3.1",
-    "eslint-config-prettier": "^10.1.8",
-    "husky": "^9.1.7",
-    "lint-staged": "^17.3.0",
-    "prettier": "^3.9.6",
-    "prisma": "^7.9.1",
     "tailwindcss": "^4",
     "typescript": "^5"
   },
-  "packageManager": "pnpm@10.19.0",
-  "lint-staged": {
-    "*.{js,jsx,ts,tsx}": [
-      "eslint --fix",
-      "prettier --write"
-    ],
-    "*.{json,md,css}": [
-      "prettier --write"
-    ]
-  }
+  "packageManager": "pnpm@10.19.0"
 }
