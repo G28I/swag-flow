@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { UserButton, useUser, SignInButton } from "@clerk/nextjs";
+import { UserButton, useUser, SignInButton, SignOutButton } from "@clerk/nextjs";
 import {
   Menu,
   X,
@@ -17,6 +17,7 @@ import {
   MessageSquare,
   Trash2,
   LogIn,
+  LogOut,
 } from "lucide-react";
 
 interface ThreadItem {
@@ -58,8 +59,9 @@ export default function AppShell({ children, breadcrumb = "Arena" }: AppShellPro
     });
   }, []);
 
-  // Fetch threads from API on mount
+  // Fetch threads from API when user is authenticated
   useEffect(() => {
+    if (!isLoaded || !user) return;
     let cancelled = false;
     async function fetchThreads() {
       setIsLoadingThreads(true);
@@ -79,7 +81,7 @@ export default function AppShell({ children, breadcrumb = "Arena" }: AppShellPro
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [isLoaded, user]);
 
   const toggleTheme = () => {
     const nextDark = !isDarkMode;
@@ -95,6 +97,10 @@ export default function AppShell({ children, breadcrumb = "Arena" }: AppShellPro
   };
 
   const handleNewThread = async () => {
+    if (!user) {
+      router.push("/sign-in");
+      return;
+    }
     try {
       const res = await fetch("/api/arena/threads", { method: "POST" });
       if (res.ok) {
@@ -194,7 +200,21 @@ export default function AppShell({ children, breadcrumb = "Arena" }: AppShellPro
             </button>
           </div>
           <div className="flex-1 overflow-y-auto space-y-1 pr-1 scrollbar-thin">
-            {isLoadingThreads ? (
+            {!isLoaded ? (
+              <div className="px-3 py-4 text-xs text-muted-foreground text-center">Loading…</div>
+            ) : !user ? (
+              <div className="px-3 py-6 text-center flex flex-col items-center gap-3 bg-muted/20 border border-border-custom/40 rounded-xl my-2">
+                <MessageSquare size={22} className="text-muted-foreground/60" />
+                <p className="text-xs text-muted-foreground font-medium leading-relaxed">
+                  Sign in to create, save, and access thread history.
+                </p>
+                <SignInButton mode="modal">
+                  <button className="text-xs font-bold text-accent hover:underline cursor-pointer">
+                    Sign In &rarr;
+                  </button>
+                </SignInButton>
+              </div>
+            ) : isLoadingThreads ? (
               <div className="px-3 py-4 text-xs text-muted-foreground text-center">Loading…</div>
             ) : threads.length === 0 ? (
               <div className="px-3 py-4 text-xs text-muted-foreground text-center">
@@ -228,7 +248,7 @@ export default function AppShell({ children, breadcrumb = "Arena" }: AppShellPro
 
         {/* Bottom User Area */}
         <div className="p-4 border-t border-border-custom bg-background/20 flex items-center justify-between">
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 min-w-0 flex-1">
             {isLoaded && user ? (
               <>
                 <UserButton />
@@ -252,13 +272,25 @@ export default function AppShell({ children, breadcrumb = "Arena" }: AppShellPro
               <div className="text-xs text-muted-foreground">Loading…</div>
             )}
           </div>
-          <button
-            onClick={toggleTheme}
-            className="p-2 rounded-xl border border-border-custom hover:bg-muted/50 text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-            title="Toggle theme"
-          >
-            {isDarkMode ? <Sun size={18} /> : <Moon size={18} />}
-          </button>
+          <div className="flex items-center gap-1.5 shrink-0">
+            {isLoaded && user && (
+              <SignOutButton>
+                <button
+                  className="p-2 rounded-xl border border-border-custom hover:bg-red-500/10 text-muted-foreground hover:text-red-400 transition-colors cursor-pointer"
+                  title="Sign out"
+                >
+                  <LogOut size={16} />
+                </button>
+              </SignOutButton>
+            )}
+            <button
+              onClick={toggleTheme}
+              className="p-2 rounded-xl border border-border-custom hover:bg-muted/50 text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+              title="Toggle theme"
+            >
+              {isDarkMode ? <Sun size={18} /> : <Moon size={18} />}
+            </button>
+          </div>
         </div>
       </aside>
 

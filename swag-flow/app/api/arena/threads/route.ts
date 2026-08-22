@@ -17,12 +17,8 @@ export async function GET() {
       userId = authObj.userId;
     }
 
-    if (!userId && process.env.NODE_ENV === "development") {
-      userId = "mock_user_123";
-    }
-
     if (!userId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return NextResponse.json({ error: "Unauthorized. Please sign in." }, { status: 401 });
     }
 
     const threads = await prisma.thread.findMany({
@@ -59,12 +55,8 @@ export async function POST() {
       userId = authObj.userId;
     }
 
-    if (!userId && process.env.NODE_ENV === "development") {
-      userId = "mock_user_123";
-    }
-
     if (!userId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return NextResponse.json({ error: "Unauthorized. Please sign in." }, { status: 401 });
     }
 
     const thread = await prisma.thread.create({
@@ -96,12 +88,8 @@ export async function DELETE(req: NextRequest) {
       userId = authObj.userId;
     }
 
-    if (!userId && process.env.NODE_ENV === "development") {
-      userId = "mock_user_123";
-    }
-
     if (!userId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return NextResponse.json({ error: "Unauthorized. Please sign in." }, { status: 401 });
     }
 
     const { searchParams } = new URL(req.url);
