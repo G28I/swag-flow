@@ -49,7 +49,49 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Thread not found or unauthorized" }, { status: 404 });
     }
 
-    // 4. Persist vote in database
+    // 4. Verify prompt message belongs to this thread and is a user prompt
+    const promptMessage = await prisma.message.findFirst({
+      where: {
+        id: promptId,
+        threadId,
+        role: "user",
+      },
+    });
+
+    if (!promptMessage) {
+      return NextResponse.json(
+        { error: "Prompt message not found in this thread" },
+        { status: 400 }
+      );
+    }
+
+    // 5. If a specific winner is voted, verify the message belongs to this prompt turn and thread
+    if (votedMessageId) {
+      const votedMessage = await prisma.message.findFirst({
+        where: {
+          id: votedMessageId,
+          threadId,
+          parentId: promptId,
+          role: "assistant",
+        },
+      });
+
+      if (!votedMessage) {
+        return NextResponse.json(
+          { error: "Voted message not found or does not belong to this prompt turn" },
+          { status: 400 }
+        );
+      }
+
+      if (votedModel && votedMessage.model !== votedModel) {
+        return NextResponse.json(
+          { error: "Voted model does not match the assistant message model" },
+          { status: 400 }
+        );
+      }
+    }
+
+    // 6. Persist vote in database
     const vote = await prisma.vote.create({
       data: {
         userId,
