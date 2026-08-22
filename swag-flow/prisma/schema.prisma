@@ -58,6 +58,7 @@ model Vote {
   models         String[] // All models that participated in this turn (e.g. ["google/gemini-2.5-flash:free", "meta-llama/llama-3-8b-instruct:free"])
   createdAt      DateTime @default(now())
 
+  @@unique([userId, promptId])
   @@index([threadId])
   @@index([promptId])
   @@index([votedModel])

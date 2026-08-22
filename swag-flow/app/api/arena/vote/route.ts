@@ -91,7 +91,22 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // 6. Persist vote in database
+    // 6. Check if a vote has already been cast for this prompt turn
+    const existingVote = await prisma.vote.findFirst({
+      where: {
+        userId,
+        promptId,
+      },
+    });
+
+    if (existingVote) {
+      return NextResponse.json(
+        { error: "A vote has already been recorded for this prompt." },
+        { status: 409 }
+      );
+    }
+
+    // 7. Persist vote in database
     const vote = await prisma.vote.create({
       data: {
         userId,
@@ -103,7 +118,7 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    // 4. Log custom event to Statsig
+    // 8. Log custom event to Statsig
     await logStatsigEvent(userId, "arena_vote_cast", {
       voteId: vote.id,
       threadId,
