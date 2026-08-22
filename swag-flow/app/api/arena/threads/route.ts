@@ -2,8 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import prisma from "@/app/lib/prisma";
 
-// GET: List all threads for the current user
-export async function GET() {
+// GET: List all threads or get a specific thread's history
+export async function GET(req: NextRequest) {
   try {
     const isClerkConfigured =
       process.env.CLERK_SECRET_KEY &&
@@ -19,6 +19,27 @@ export async function GET() {
 
     if (!userId) {
       return NextResponse.json({ error: "Unauthorized. Please sign in." }, { status: 401 });
+    }
+
+    const { searchParams } = new URL(req.url);
+    const threadId = searchParams.get("id");
+
+    if (threadId) {
+      const thread = await prisma.thread.findFirst({
+        where: { id: threadId, userId },
+        include: {
+          messages: {
+            orderBy: { createdAt: "asc" },
+          },
+          votes: true,
+        },
+      });
+
+      if (!thread) {
+        return NextResponse.json({ error: "Thread not found" }, { status: 404 });
+      }
+
+      return NextResponse.json(thread);
     }
 
     const threads = await prisma.thread.findMany({

@@ -77,7 +77,7 @@ const FALLBACK_MODELS: ModelItem[] = [
 
 export default function Home() {
   const [prompt, setPrompt] = useState("");
-  const [threadId, setThreadId] = useState<string | null>("active-thread");
+  const [threadId, setThreadId] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -94,18 +94,156 @@ export default function Home() {
   const modelB = useModelStream();
   const modelC = useModelStream();
 
-  // Read thread from query parameters on mount or when URL changes
+  // Read thread from query parameters and load thread history
   useEffect(() => {
-    if (typeof window !== "undefined") {
-      const params = new URLSearchParams(window.location.search);
-      const threadParam = params.get("thread");
-      if (threadParam) {
-        requestAnimationFrame(() => {
-          setThreadId(threadParam);
-        });
+    const params =
+      typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
+    const targetThreadId = threadId || params?.get("thread");
+    if (!targetThreadId) return;
+
+    let cancelled = false;
+    async function loadThreadHistory() {
+      try {
+        const res = await fetch(`/api/arena/threads?id=${targetThreadId}`);
+        if (!res.ok) {
+          if (res.status === 404) {
+            console.warn("Thread not found:", targetThreadId);
+          }
+          return;
+        }
+
+        const data = await res.json();
+        if (cancelled) return;
+        setThreadId(targetThreadId || null);
+
+        if (Array.isArray(data.messages)) {
+          const userMessages = data.messages.filter((m: { role: string }) => m.role === "user");
+          const hydratedTurns: Turn[] = userMessages.map(
+            (userMsg: { id: string; content: string }) => {
+              const replies = data.messages.filter(
+                (m: { parentId: string | null }) => m.parentId === userMsg.id
+              );
+              const vote = Array.isArray(data.votes)
+                ? data.votes.find((v: { promptId: string }) => v.promptId === userMsg.id)
+                : null;
+
+              let turnModels: ModelItem[] = [];
+              if (vote?.models && vote.models.length > 0) {
+                turnModels = vote.models.map((slug: string) => {
+                  const match = availableModels.find((m) => m.id === slug);
+                  return (
+                    match || {
+                      id: slug,
+                      name: slug.split("/")[1] || slug,
+                      context_length: 8192,
+                      pricing: { prompt: "0", completion: "0" },
+                    }
+                  );
+                });
+              } else if (replies.length > 0) {
+                turnModels = replies.map((r: { model: string | null }) => {
+                  const slug = r.model || "unknown";
+                  const match = availableModels.find((m) => m.id === slug);
+                  return (
+                    match || {
+                      id: slug,
+                      name: slug.split("/")[1] || slug,
+                      context_length: 8192,
+                      pricing: { prompt: "0", completion: "0" },
+                    }
+                  );
+                });
+              } else {
+                turnModels =
+                  availableModels.length > 0 ? availableModels.slice(0, 3) : [...FALLBACK_MODELS];
+              }
+
+              const rA = replies[0];
+              const rB = replies[1];
+              const rC = replies[2];
+
+              let winnerModel: string | null = null;
+              if (vote) {
+                if (!vote.votedModel && !vote.votedMessageId) {
+                  winnerModel = "tie";
+                } else if (vote.votedMessageId) {
+                  if (rA && vote.votedMessageId === rA.id) winnerModel = "modelA";
+                  else if (rB && vote.votedMessageId === rB.id) winnerModel = "modelB";
+                  else if (rC && vote.votedMessageId === rC.id) winnerModel = "modelC";
+                } else if (vote.votedModel) {
+                  if (turnModels[0]?.id === vote.votedModel) winnerModel = "modelA";
+                  else if (turnModels[1]?.id === vote.votedModel) winnerModel = "modelB";
+                  else if (turnModels[2]?.id === vote.votedModel) winnerModel = "modelC";
+                }
+              }
+
+              return {
+                id: userMsg.id,
+                prompt: userMsg.content,
+                promptId: userMsg.id,
+                winnerModel,
+                activeCount: Math.max(turnModels.length, replies.length, 1),
+                models: turnModels,
+                responses: {
+                  modelA: {
+                    text: rA?.content || "",
+                    error: null,
+                    metrics: rA
+                      ? {
+                          latency: rA.latency || 0,
+                          ttft: rA.ttft || 0,
+                          tokensPerSec: rA.tokensPerSec || 0,
+                          tokenCount: rA.tokenCount || 0,
+                        }
+                      : null,
+                    isStreaming: false,
+                    messageId: rA?.id || null,
+                  },
+                  modelB: {
+                    text: rB?.content || "",
+                    error: null,
+                    metrics: rB
+                      ? {
+                          latency: rB.latency || 0,
+                          ttft: rB.ttft || 0,
+                          tokensPerSec: rB.tokensPerSec || 0,
+                          tokenCount: rB.tokenCount || 0,
+                        }
+                      : null,
+                    isStreaming: false,
+                    messageId: rB?.id || null,
+                  },
+                  modelC: {
+                    text: rC?.content || "",
+                    error: null,
+                    metrics: rC
+                      ? {
+                          latency: rC.latency || 0,
+                          ttft: rC.ttft || 0,
+                          tokensPerSec: rC.tokensPerSec || 0,
+                          tokenCount: rC.tokenCount || 0,
+                        }
+                      : null,
+                    isStreaming: false,
+                    messageId: rC?.id || null,
+                  },
+                },
+              };
+            }
+          );
+
+          setTurns(hydratedTurns);
+        }
+      } catch (err) {
+        console.error("Failed to load thread history:", err);
       }
     }
-  }, []);
+
+    loadThreadHistory();
+    return () => {
+      cancelled = true;
+    };
+  }, [threadId, availableModels]);
 
   // Fetch live free-tier models on mount
   useEffect(() => {
@@ -131,6 +269,10 @@ export default function Home() {
     setPrompt("");
     setError(null);
     setTurns([]);
+    setThreadId(null);
+    if (typeof window !== "undefined") {
+      window.history.replaceState(null, "", "/");
+    }
     modelA.reset();
     modelB.reset();
     modelC.reset();
