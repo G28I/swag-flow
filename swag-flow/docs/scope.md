@@ -8,7 +8,7 @@ Whenever a "build it" style step actually gets underway, break it into its own s
 
 ## Stack
 
-Already decided, nothing open here: Next.js (App Router), TypeScript, Tailwind, shadcn for components (card, button, popover, loading skeleton, and whatever else the UI actually needs as it gets built), Prisma with Postgres, Clerk for auth, Arcjet in front of the endpoint, PostHog for analytics and observability.
+Already decided, nothing open here: Next.js (App Router), TypeScript, Tailwind, shadcn for components (card, button, popover, loading skeleton, and whatever else the UI actually needs as it gets built), Prisma with Postgres, Clerk for auth, Arcjet in front of the endpoint, Statsig for analytics and feature gating.
 
 ## Sketches
 
@@ -18,13 +18,13 @@ There are rough hand-drawn sketches for the arena screen, the leaderboard, and t
 
 | #   | Feature                                     | Phase      | Status      |
 | --- | ------------------------------------------- | ---------- | ----------- |
-| 1   | Connecting to a model                       | Foundation | not started |
-| 2   | Coding standards & tooling                  | Foundation | not started |
-| 3   | Data model                                  | Foundation | not started |
-| 4   | Design & look                               | Foundation | not started |
-| 5   | Model picker                                | Slice 1    | not started |
-| 6   | Send a prompt, parallel streams, and voting | Slice 1    | not started |
-| 7   | App shell & thread history                  | Slice 2    | not started |
+| 1   | Connecting to a model                       | Foundation | completed   |
+| 2   | Coding standards & tooling                  | Foundation | completed   |
+| 3   | Data model                                  | Foundation | completed   |
+| 4   | Design & look                               | Foundation | completed   |
+| 5   | Model picker                                | Slice 1    | completed   |
+| 6   | Send a prompt, parallel streams, and voting | Slice 1    | completed   |
+| 7   | App shell & thread history                  | Slice 2    | completed   |
 | 8   | Public thread visibility & sharing          | Slice 3    | not started |
 | 9   | Leaderboard: global & personal              | Slice 4    | not started |
 
@@ -36,31 +36,31 @@ The Next.js project itself gets created manually first, `create-next-app`, fast 
 
 Two real decisions still open once that exists: how the app calls OpenRouter to get a model's answer, and how streaming three models back to the browser at once should actually work. This one's worth real thought: routing all three through one shared connection looks simpler, but if that one connection drops, all three answers die together, which breaks the whole point of one model failing never affecting the others. Decide both properly, then wire them, along with Prisma, Clerk, and Arcjet, into the project that already exists.
 
-PostHog should be wired in from the start too, session replay and heatmaps turned on, and tied to the signed-in user once Clerk resolves, so events are attached to a real person, not left anonymous.
+Statsig should be wired in from the start too, tied to the signed-in user once Clerk resolves, so events are attached to a real person, not left anonymous.
 
-- [ ] Decide the approach
-- [ ] Write the spec
+- [x] Decide the approach
+- [x] Write the spec
 
 ### 2. Coding standards & tooling
 
 Write down the real conventions for this project once it actually exists, then install linting, formatting, and a pre-commit hook that actually enforces them.
 
-- [ ] Decide the approach
-- [ ] Install lint, format, and whatever else is needed, and write it up in a coding-standards doc
+- [x] Decide the approach
+- [x] Install lint, format, and whatever else is needed, and write it up in a coding-standards doc
 
 ### 3. Data model
 
 The core things every feature depends on: users tied to Clerk, threads, each model's own messages inside a thread, and votes. A vote should only ever be possible on a turn where two or more models actually answered.
 
-- [ ] Decide the approach
-- [ ] Build it
+- [x] Decide the approach
+- [x] Build it
 
 ### 4. Design & look
 
 A coffee or dark brown background, warm, not neutral gray or true black. One accent color, rust, used only for things you interact with, buttons, links, focus states, the win-rate bar, never as decoration. Because the background and the accent are both warm tones from the same family, the accent has to stay clearly brighter and more saturated than the background, enough that a button never blends into the page behind it, that's a real risk with two warm colors this close and worth checking by eye, not just by the numbers. Blue, indigo, and purple are never the accent, under any circumstance. Green is reserved only for marking a winner, red only for errors, never reused for anything else. Contrast should genuinely hold up in both light and dark mode, not just look fine at a glance.
 
-- [ ] Decide the approach
-- [ ] Build it
+- [x] Decide the approach
+- [x] Build it
 
 ## Slice 1: Core arena loop
 
@@ -77,7 +77,7 @@ The heart of the product. One prompt goes to every selected model at once, each 
 
 Arcjet sits in front of this endpoint before any model is ever called: rate limiting, bot protection, and a shield against prompt injection, plus a real limit on how much one person can use across all three models at once, not just a limit on the endpoint overall.
 
-Every prompt sent, every answer finishing, and every vote cast should be tracked as a real PostHog event, so there's an honest funnel from prompt to answer to vote. A model failing should also be logged properly on the server, not just shown to the user and forgotten. Separately from that funnel, every actual model call should also be wrapped so PostHog captures its own real tokens, cost, and latency per call, that's PostHog's own LLM analytics, not the same thing as the funnel events or the numbers already shown on the response card.
+Every prompt sent, every answer finishing, and every vote cast should be tracked as a Statsig custom event, so there's an honest funnel from prompt to answer to vote. A model failing should also be logged properly on the server, not just shown to the user and forgotten. Separately from that funnel, every actual model call should also log its own real tokens, cost, and latency metrics to Statsig.
 
 - [ ] Decide the approach
 - [ ] Build it
