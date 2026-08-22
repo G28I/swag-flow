@@ -606,7 +606,7 @@ function ArenaContent() {
 
   return (
     <AppShell breadcrumb={threadTitle}>
-      <div className="flex flex-col h-[calc(100vh-4rem)] relative bg-background">
+      <div className="flex-1 flex flex-col min-h-0 relative bg-background w-full overflow-hidden">
         {/* Top Thread Subheader Bar */}
         {threadId && !isNotFound && (
           <div className="px-6 py-2.5 border-b border-border-custom/50 bg-card-bg/20 flex items-center justify-between shrink-0">

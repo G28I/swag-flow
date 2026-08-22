@@ -337,8 +337,8 @@ export default function AppShell({ children, breadcrumb = "Arena" }: AppShellPro
           </div>
         </header>
 
-        {/* Active Page Content Scroll Area */}
-        <div className="flex-1 overflow-y-auto">{children}</div>
+        {/* Active Page Content Area */}
+        <main className="flex-1 min-h-0 flex flex-col relative overflow-hidden">{children}</main>
       </div>
     </div>
   );
