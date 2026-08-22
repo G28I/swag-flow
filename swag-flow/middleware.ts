@@ -9,6 +9,7 @@ const isPublicRoute = createRouteMatcher([
   "/api/arena/stream",
   "/api/arena/prompt",
   "/api/arena/models",
+  "/api/arena/vote",
 ]);
 
 export default clerkMiddleware(async (auth, req) => {

@@ -27,12 +27,13 @@ interface TurnResponse {
   error: string | null;
   metrics: StreamMetrics | null;
   isStreaming: boolean;
+  messageId: string | null;
 }
 
 interface Turn {
   id: string;
   prompt: string;
-  winnerModel: string | null; // e.g. "modelA" | "modelB" | "modelC"
+  winnerModel: string | null; // e.g. "modelA" | "modelB" | "modelC" | "tie"
   responses: {
     modelA: TurnResponse;
     modelB: TurnResponse;
@@ -40,6 +41,7 @@ interface Turn {
   };
   activeCount: number; // number of models active in this turn
   models: ModelItem[];
+  promptId: string;
 }
 
 interface ModelItem {
@@ -134,10 +136,56 @@ export default function Home() {
     modelC.reset();
   };
 
-  const handleVote = (turnId: string, modelSlot: "modelA" | "modelB" | "modelC") => {
-    setTurns((prev) =>
-      prev.map((turn) => (turn.id === turnId ? { ...turn, winnerModel: modelSlot } : turn))
-    );
+  const handleVote = async (turnId: string, modelSlot: "modelA" | "modelB" | "modelC" | null) => {
+    const turn = turns.find((t) => t.id === turnId);
+    if (!turn) return;
+
+    const votedModel =
+      modelSlot === "modelA"
+        ? turn.models[0]?.id
+        : modelSlot === "modelB"
+          ? turn.models[1]?.id
+          : modelSlot === "modelC"
+            ? turn.models[2]?.id
+            : null;
+
+    const votedMessageId =
+      modelSlot === "modelA"
+        ? turn.responses.modelA.messageId
+        : modelSlot === "modelB"
+          ? turn.responses.modelB.messageId
+          : modelSlot === "modelC"
+            ? turn.responses.modelC.messageId
+            : null;
+
+    const modelsSlugs = turn.models.map((m) => m.id);
+
+    try {
+      const res = await fetch("/api/arena/vote", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          threadId,
+          promptId: turn.promptId,
+          votedMessageId,
+          votedModel,
+          models: modelsSlugs,
+        }),
+      });
+
+      if (!res.ok) {
+        throw new Error("Failed to record vote on backend API");
+      }
+
+      setTurns((prev) =>
+        prev.map((t) => (t.id === turnId ? { ...t, winnerModel: modelSlot || "tie" } : t))
+      );
+    } catch (err) {
+      console.error("Voting error:", err);
+      setError("Failed to record vote. Please try again.");
+    }
   };
 
   const removeModel = (modelId: string) => {
@@ -173,10 +221,29 @@ export default function Home() {
       activeCount: activeModels.length,
       models: [...activeModels],
       responses: {
-        modelA: { text: "", error: null, metrics: null, isStreaming: activeModels.length > 0 },
-        modelB: { text: "", error: null, metrics: null, isStreaming: activeModels.length > 1 },
-        modelC: { text: "", error: null, metrics: null, isStreaming: activeModels.length > 2 },
+        modelA: {
+          text: "",
+          error: null,
+          metrics: null,
+          isStreaming: activeModels.length > 0,
+          messageId: null,
+        },
+        modelB: {
+          text: "",
+          error: null,
+          metrics: null,
+          isStreaming: activeModels.length > 1,
+          messageId: null,
+        },
+        modelC: {
+          text: "",
+          error: null,
+          metrics: null,
+          isStreaming: activeModels.length > 2,
+          messageId: null,
+        },
       },
+      promptId: "",
     };
 
     setTurns((prev) => [...prev, initialTurn]);
@@ -222,6 +289,9 @@ export default function Home() {
         window.history.replaceState(null, "", `/?thread=${currentThreadId}`);
       }
 
+      // Update promptId in active turn history
+      setTurns((prev) => prev.map((t) => (t.id === turnId ? { ...t, promptId: parentId } : t)));
+
       // 2. Fire OpenRouter streaming connections concurrently
       activeModels.forEach((model, idx) => {
         const hook = idx === 0 ? modelA : idx === 1 ? modelB : modelC;
@@ -243,18 +313,21 @@ export default function Home() {
                     error: activeModels.length > 0 ? errMsg : null,
                     metrics: null,
                     isStreaming: false,
+                    messageId: null,
                   },
                   modelB: {
                     text: "",
                     error: activeModels.length > 1 ? errMsg : null,
                     metrics: null,
                     isStreaming: false,
+                    messageId: null,
                   },
                   modelC: {
                     text: "",
                     error: activeModels.length > 2 ? errMsg : null,
                     metrics: null,
                     isStreaming: false,
+                    messageId: null,
                   },
                 },
               }
@@ -282,18 +355,21 @@ export default function Home() {
             error: modelA.error,
             metrics: modelA.metrics,
             isStreaming: modelA.isStreaming,
+            messageId: modelA.messageId,
           },
           modelB: {
             text: modelB.text,
             error: modelB.error,
             metrics: modelB.metrics,
             isStreaming: modelB.isStreaming,
+            messageId: modelB.messageId,
           },
           modelC: {
             text: modelC.text,
             error: modelC.error,
             metrics: modelC.metrics,
             isStreaming: modelC.isStreaming,
+            messageId: modelC.messageId,
           },
         },
       };
@@ -373,6 +449,29 @@ export default function Home() {
                       />
                     )}
                   </div>
+
+                  {/* Declare Tie or Tie status */}
+                  {!turn.winnerModel &&
+                    !turn.responses.modelA.isStreaming &&
+                    !turn.responses.modelB.isStreaming &&
+                    !turn.responses.modelC.isStreaming && (
+                      <div className="flex justify-center mt-2">
+                        <button
+                          onClick={() => handleVote(turn.id, null)}
+                          className="px-4 py-2 rounded-xl border border-border-custom bg-card-bg/60 hover:bg-muted/40 text-xs font-bold transition-all duration-150 flex items-center gap-2 cursor-pointer text-muted-foreground hover:text-foreground shadow-sm"
+                        >
+                          <span>🤝 Declare Tie</span>
+                        </button>
+                      </div>
+                    )}
+
+                  {turn.winnerModel === "tie" && (
+                    <div className="flex justify-center mt-2 select-none">
+                      <span className="px-4 py-2 rounded-xl bg-muted/30 border border-border-custom/50 text-xs font-bold text-muted-foreground tracking-wide">
+                        🤝 Tie Declared
+                      </span>
+                    </div>
+                  )}
                 </div>
               );
             })
