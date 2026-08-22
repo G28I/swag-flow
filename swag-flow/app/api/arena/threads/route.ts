@@ -17,16 +17,13 @@ export async function GET(req: NextRequest) {
       userId = authObj.userId;
     }
 
-    if (!userId) {
-      return NextResponse.json({ error: "Unauthorized. Please sign in." }, { status: 401 });
-    }
-
     const { searchParams } = new URL(req.url);
     const threadId = searchParams.get("id");
 
+    // Single thread lookup: Public read allowed, isOwner flag computed
     if (threadId) {
-      const thread = await prisma.thread.findFirst({
-        where: { id: threadId, userId },
+      const thread = await prisma.thread.findUnique({
+        where: { id: threadId },
         include: {
           messages: {
             orderBy: { createdAt: "asc" },
@@ -39,7 +36,17 @@ export async function GET(req: NextRequest) {
         return NextResponse.json({ error: "Thread not found" }, { status: 404 });
       }
 
-      return NextResponse.json(thread);
+      const isOwner = Boolean(userId && thread.userId === userId);
+
+      return NextResponse.json({
+        ...thread,
+        isOwner,
+      });
+    }
+
+    // Listing user's thread history: Strictly requires authentication
+    if (!userId) {
+      return NextResponse.json({ error: "Unauthorized. Please sign in." }, { status: 401 });
     }
 
     const threads = await prisma.thread.findMany({

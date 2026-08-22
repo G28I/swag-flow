@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { useModelStream } from "./arena/useModelStream";
 import AppShell from "@/components/AppShell";
+import { SignInButton } from "@clerk/nextjs";
 import {
   ArrowUp,
   Plus,
@@ -13,6 +14,8 @@ import {
   Trash2,
   X,
   Lock,
+  Share2,
+  AlertCircle,
 } from "lucide-react";
 
 interface StreamMetrics {
@@ -78,6 +81,10 @@ const FALLBACK_MODELS: ModelItem[] = [
 export default function Home() {
   const [prompt, setPrompt] = useState("");
   const [threadId, setThreadId] = useState<string | null>(null);
+  const [threadTitle, setThreadTitle] = useState<string>("Arena");
+  const [isOwner, setIsOwner] = useState(true);
+  const [isNotFound, setIsNotFound] = useState(false);
+  const [copied, setCopied] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -107,7 +114,9 @@ export default function Home() {
         const res = await fetch(`/api/arena/threads?id=${targetThreadId}`);
         if (!res.ok) {
           if (res.status === 404) {
-            console.warn("Thread not found:", targetThreadId);
+            setIsNotFound(true);
+            setThreadTitle("Not Found");
+            setTurns([]);
           }
           return;
         }
@@ -115,6 +124,9 @@ export default function Home() {
         const data = await res.json();
         if (cancelled) return;
         setThreadId(targetThreadId || null);
+        setIsNotFound(false);
+        setThreadTitle(data.title || "Arena");
+        setIsOwner(typeof data.isOwner === "boolean" ? data.isOwner : true);
 
         if (Array.isArray(data.messages)) {
           const userMessages = data.messages.filter((m: { role: string }) => m.role === "user");
@@ -265,11 +277,22 @@ export default function Home() {
     loadModels();
   }, []);
 
+  const handleShare = () => {
+    if (typeof window !== "undefined") {
+      navigator.clipboard.writeText(window.location.href);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
+
   const handleReset = () => {
     setPrompt("");
     setError(null);
     setTurns([]);
     setThreadId(null);
+    setIsOwner(true);
+    setIsNotFound(false);
+    setThreadTitle("Arena");
     if (typeof window !== "undefined") {
       window.history.replaceState(null, "", "/");
     }
@@ -520,252 +543,342 @@ export default function Home() {
   });
 
   return (
-    <AppShell breadcrumb="Thread 1">
+    <AppShell breadcrumb={threadTitle}>
       <div className="flex flex-col h-[calc(100vh-4rem)] relative bg-background">
-        {/* Scrollable Chat Area */}
-        <div className="flex-1 overflow-y-auto px-6 py-8 space-y-8 pb-36">
-          {activeTurns.length === 0 ? (
-            /* Empty State */
-            <div className="max-w-2xl mx-auto text-center py-20 flex flex-col items-center gap-4">
-              <div className="w-16 h-16 rounded-2xl bg-card-bg border border-border-custom flex items-center justify-center text-accent">
-                <Sparkles size={32} />
-              </div>
-              <h2 className="text-2xl font-extrabold tracking-tight">
-                Concurrently Compare Models
-              </h2>
-              <p className="text-sm text-muted-foreground max-w-md leading-relaxed font-medium">
-                Choose up to three models from the picker, ask anything below, and watch responses
-                stream in parallel columns. Select the best output to record a vote.
-              </p>
-            </div>
-          ) : (
-            /* Chat Turns */
-            activeTurns.map((turn) => {
-              // Align grid size to active count of models in this turn
-              const gridCols =
-                turn.activeCount === 1
-                  ? "grid-cols-1 max-w-2xl"
-                  : turn.activeCount === 2
-                    ? "grid-cols-1 md:grid-cols-2 max-w-5xl"
-                    : "grid-cols-1 md:grid-cols-3 max-w-7xl";
-
-              return (
-                <div key={turn.id} className="flex flex-col gap-6 w-full mx-auto">
-                  {/* User Message Bubble */}
-                  <div className="flex justify-end max-w-7xl mx-auto w-full">
-                    <div className="max-w-xl bg-card-bg border border-border-custom px-5 py-3.5 rounded-2xl text-sm font-semibold shadow-md leading-relaxed">
-                      {turn.prompt}
-                    </div>
-                  </div>
-
-                  {/* Models Output Columns Grid */}
-                  <div className={`grid gap-6 w-full mx-auto ${gridCols}`}>
-                    {turn.activeCount > 0 && (
-                      <ModelResponseCard
-                        modelName={turn.models[0]?.id || "Model A"}
-                        modelShort={(turn.models[0]?.name || "A").charAt(0).toUpperCase()}
-                        state={turn.responses.modelA}
-                        winnerModel={turn.winnerModel}
-                        onVote={() => handleVote(turn.id, "modelA")}
-                        isVoted={turn.winnerModel === "modelA"}
-                      />
-                    )}
-                    {turn.activeCount > 1 && (
-                      <ModelResponseCard
-                        modelName={turn.models[1]?.id || "Model B"}
-                        modelShort={(turn.models[1]?.name || "B").charAt(0).toUpperCase()}
-                        state={turn.responses.modelB}
-                        winnerModel={turn.winnerModel}
-                        onVote={() => handleVote(turn.id, "modelB")}
-                        isVoted={turn.winnerModel === "modelB"}
-                      />
-                    )}
-                    {turn.activeCount > 2 && (
-                      <ModelResponseCard
-                        modelName={turn.models[2]?.id || "Model C"}
-                        modelShort={(turn.models[2]?.name || "C").charAt(0).toUpperCase()}
-                        state={turn.responses.modelC}
-                        winnerModel={turn.winnerModel}
-                        onVote={() => handleVote(turn.id, "modelC")}
-                        isVoted={turn.winnerModel === "modelC"}
-                      />
-                    )}
-                  </div>
-
-                  {/* Declare Tie or Tie status */}
-                  {!turn.winnerModel &&
-                    !turn.responses.modelA.isStreaming &&
-                    !turn.responses.modelB.isStreaming &&
-                    !turn.responses.modelC.isStreaming && (
-                      <div className="flex justify-center mt-2">
-                        <button
-                          onClick={() => handleVote(turn.id, null)}
-                          className="px-4 py-2 rounded-xl border border-border-custom bg-card-bg/60 hover:bg-muted/40 text-xs font-bold transition-all duration-150 flex items-center gap-2 cursor-pointer text-muted-foreground hover:text-foreground shadow-sm"
-                        >
-                          <span>🤝 Declare Tie</span>
-                        </button>
-                      </div>
-                    )}
-
-                  {turn.winnerModel === "tie" && (
-                    <div className="flex justify-center mt-2 select-none">
-                      <span className="px-4 py-2 rounded-xl bg-muted/30 border border-border-custom/50 text-xs font-bold text-muted-foreground tracking-wide">
-                        🤝 Tie Declared
-                      </span>
-                    </div>
-                  )}
-                </div>
-              );
-            })
-          )}
-          {error && (
-            <div className="max-w-2xl mx-auto p-4 text-xs text-red-200 bg-red-950/40 border border-red-800 rounded-xl">
-              {error}
-            </div>
-          )}
-        </div>
-
-        {/* Bottom Prompts Dock */}
-        <div className="absolute bottom-0 inset-x-0 p-6 bg-gradient-to-t from-background via-background to-transparent pointer-events-none flex flex-col items-center">
-          <div className="w-full max-w-4xl pointer-events-auto flex flex-col gap-3">
-            {/* Active Model Selection Chips */}
-            <div className="flex flex-wrap gap-2 px-1 max-h-12 overflow-y-auto">
-              {activeModels.map((model) => (
-                <div
-                  key={model.id}
-                  className="px-2.5 py-1 rounded-full border border-border-custom bg-card-bg text-[10px] font-bold flex items-center gap-1.5 shadow-sm text-foreground/90"
-                >
-                  <span className="w-4 h-4 rounded-full bg-accent/20 border border-accent/30 text-accent flex items-center justify-center font-black text-[9px]">
-                    {model.name.charAt(0).toUpperCase()}
-                  </span>
-                  <span className="truncate max-w-[120px]">
-                    {model.name.split("/")[1] || model.name}
-                  </span>
-                  <button
-                    onClick={() => removeModel(model.id)}
-                    disabled={isSubmitting || isStreamingAny}
-                    className="hover:text-red-400 p-0.5 rounded-full hover:bg-muted/50 cursor-pointer disabled:opacity-50"
-                  >
-                    <X size={10} />
-                  </button>
-                </div>
-              ))}
-              {activeModels.length === 0 && (
-                <span className="text-[10px] text-red-400 font-bold bg-red-950/30 border border-red-800/30 px-3 py-1 rounded-full select-none animate-pulse">
-                  No active models selected! Add a model to compare.
+        {/* Top Thread Subheader Bar */}
+        {threadId && !isNotFound && (
+          <div className="px-6 py-2.5 border-b border-border-custom/50 bg-card-bg/20 flex items-center justify-between shrink-0">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-bold text-foreground/80 truncate max-w-xs md:max-w-md">
+                {threadTitle}
+              </span>
+              {!isOwner && (
+                <span className="px-2 py-0.5 rounded-md bg-muted/50 text-[10px] font-semibold text-muted-foreground">
+                  Shared View
                 </span>
               )}
             </div>
-
-            {/* Prompt Box */}
-            <form
-              onSubmit={handleSubmit}
-              className="bg-card-bg border border-border-custom rounded-2xl p-4 shadow-xl flex flex-col gap-3"
+            <button
+              onClick={handleShare}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-border-custom bg-card-bg/80 hover:bg-card-bg text-xs font-semibold text-foreground/80 hover:text-foreground transition-all cursor-pointer shadow-sm"
+              title="Share this thread"
             >
-              <textarea
-                value={prompt}
-                onChange={(e) => setPrompt(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && !e.shiftKey) {
-                    e.preventDefault();
-                    handleSubmit(e);
-                  }
-                }}
-                disabled={isSubmitting || isStreamingAny || activeModels.length === 0}
-                placeholder="Ask anything. Enter to send, shift + enter for a new line"
-                className="w-full bg-transparent text-foreground text-sm font-medium focus:outline-none resize-none h-14 placeholder-muted-foreground/75 leading-relaxed pr-10"
-              />
+              {copied ? (
+                <>
+                  <Check size={14} className="text-emerald-500" />
+                  <span className="text-emerald-500 font-bold">Link Copied!</span>
+                </>
+              ) : (
+                <>
+                  <Share2 size={14} />
+                  <span>Share</span>
+                </>
+              )}
+            </button>
+          </div>
+        )}
 
-              <div className="flex items-center justify-between border-t border-border-custom/40 pt-3 relative">
-                {/* Model selection popover */}
-                <div className="relative">
-                  <button
-                    type="button"
-                    onClick={() => setShowModelPicker(!showModelPicker)}
-                    disabled={isSubmitting || isStreamingAny}
-                    className="px-3.5 py-1.5 rounded-lg border border-border-custom bg-background hover:bg-muted/40 text-xs font-bold transition-all duration-150 flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
-                  >
-                    <Plus size={14} className="text-accent" />
-                    <span>Add Model</span>
-                  </button>
+        {isNotFound ? (
+          /* Not Found State */
+          <div className="max-w-md mx-auto my-20 p-8 rounded-2xl bg-card-bg border border-border-custom text-center flex flex-col items-center gap-4 shadow-xl">
+            <div className="w-12 h-12 rounded-2xl bg-red-500/10 text-red-500 flex items-center justify-center font-bold text-lg">
+              <AlertCircle size={24} />
+            </div>
+            <h2 className="text-xl font-extrabold text-foreground">Thread Not Found</h2>
+            <p className="text-xs text-muted-foreground leading-relaxed">
+              This arena comparison thread does not exist, was deleted, or the link is invalid.
+            </p>
+            <button
+              onClick={handleReset}
+              className="px-5 py-2.5 bg-accent hover:bg-accent-hover text-white text-xs font-bold rounded-xl transition-all shadow-md cursor-pointer mt-2"
+            >
+              Start New Arena
+            </button>
+          </div>
+        ) : (
+          <>
+            {/* Scrollable Chat Area */}
+            <div className="flex-1 overflow-y-auto px-6 py-8 space-y-8 pb-36">
+              {activeTurns.length === 0 ? (
+                /* Empty State */
+                <div className="max-w-2xl mx-auto text-center py-20 flex flex-col items-center gap-4">
+                  <div className="w-16 h-16 rounded-2xl bg-card-bg border border-border-custom flex items-center justify-center text-accent">
+                    <Sparkles size={32} />
+                  </div>
+                  <h2 className="text-2xl font-extrabold tracking-tight">
+                    Concurrently Compare Models
+                  </h2>
+                  <p className="text-sm text-muted-foreground max-w-md leading-relaxed font-medium">
+                    Choose up to three models from the picker, ask anything below, and watch
+                    responses stream in parallel columns. Select the best output to record a vote.
+                  </p>
+                </div>
+              ) : (
+                /* Chat Turns */
+                activeTurns.map((turn) => {
+                  // Align grid size to active count of models in this turn
+                  const gridCols =
+                    turn.activeCount === 1
+                      ? "grid-cols-1 max-w-2xl"
+                      : turn.activeCount === 2
+                        ? "grid-cols-1 md:grid-cols-2 max-w-5xl"
+                        : "grid-cols-1 md:grid-cols-3 max-w-7xl";
 
-                  {showModelPicker && (
-                    <div className="absolute bottom-10 left-0 bg-card-bg border border-border-custom p-4 rounded-xl shadow-2xl w-64 z-30 flex flex-col gap-3.5 max-h-72 overflow-y-auto">
-                      <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
-                        Available Free Models
-                      </h4>
-                      <div className="flex flex-col gap-2">
-                        {availableModels.map((model) => {
-                          const isActive = activeModels.some((m) => m.id === model.id);
-                          const isLimit = activeModels.length >= 3;
-                          return (
-                            <button
-                              key={model.id}
-                              type="button"
-                              disabled={isActive || (isLimit && !isActive)}
-                              onClick={() => {
-                                addModel(model);
-                                setShowModelPicker(false);
-                              }}
-                              className={`w-full px-3 py-2 rounded-lg border text-left text-xs font-bold flex items-center justify-between transition-all duration-150 ${
-                                isActive
-                                  ? "bg-accent/10 border-accent/20 text-accent cursor-default"
-                                  : isLimit
-                                    ? "border-border-custom text-muted-foreground cursor-not-allowed opacity-50"
-                                    : "border-border-custom hover:bg-muted/40 text-foreground/90 cursor-pointer"
-                              }`}
-                            >
-                              <div className="flex flex-col min-w-0 pr-2">
-                                <span className="truncate">{model.name}</span>
-                                <span className="text-[9px] text-muted-foreground truncate leading-normal">
-                                  {model.context_length.toLocaleString()} ctx
-                                </span>
-                              </div>
-                              {isActive ? (
-                                <Check size={12} className="shrink-0" />
-                              ) : isLimit ? (
-                                <Lock size={12} className="shrink-0" />
-                              ) : null}
-                            </button>
-                          );
-                        })}
-                        {availableModels.length === 0 && (
-                          <div className="text-center italic text-xs text-muted-foreground py-2 select-none">
-                            Loading models catalog...
-                          </div>
+                  return (
+                    <div key={turn.id} className="flex flex-col gap-6 w-full mx-auto">
+                      {/* User Message Bubble */}
+                      <div className="flex justify-end max-w-7xl mx-auto w-full">
+                        <div className="max-w-xl bg-card-bg border border-border-custom px-5 py-3.5 rounded-2xl text-sm font-semibold shadow-md leading-relaxed">
+                          {turn.prompt}
+                        </div>
+                      </div>
+
+                      {/* Models Output Columns Grid */}
+                      <div className={`grid gap-6 w-full mx-auto ${gridCols}`}>
+                        {turn.activeCount > 0 && (
+                          <ModelResponseCard
+                            modelName={turn.models[0]?.id || "Model A"}
+                            modelShort={(turn.models[0]?.name || "A").charAt(0).toUpperCase()}
+                            state={turn.responses.modelA}
+                            winnerModel={turn.winnerModel}
+                            onVote={() => handleVote(turn.id, "modelA")}
+                            isVoted={turn.winnerModel === "modelA"}
+                            isOwner={isOwner}
+                          />
+                        )}
+                        {turn.activeCount > 1 && (
+                          <ModelResponseCard
+                            modelName={turn.models[1]?.id || "Model B"}
+                            modelShort={(turn.models[1]?.name || "B").charAt(0).toUpperCase()}
+                            state={turn.responses.modelB}
+                            winnerModel={turn.winnerModel}
+                            onVote={() => handleVote(turn.id, "modelB")}
+                            isVoted={turn.winnerModel === "modelB"}
+                            isOwner={isOwner}
+                          />
+                        )}
+                        {turn.activeCount > 2 && (
+                          <ModelResponseCard
+                            modelName={turn.models[2]?.id || "Model C"}
+                            modelShort={(turn.models[2]?.name || "C").charAt(0).toUpperCase()}
+                            state={turn.responses.modelC}
+                            winnerModel={turn.winnerModel}
+                            onVote={() => handleVote(turn.id, "modelC")}
+                            isVoted={turn.winnerModel === "modelC"}
+                            isOwner={isOwner}
+                          />
                         )}
                       </div>
-                    </div>
-                  )}
-                </div>
 
-                {/* Form Buttons */}
-                <div className="flex items-center gap-3">
-                  {turns.length > 0 && (
-                    <button
-                      type="button"
-                      onClick={handleReset}
-                      disabled={isSubmitting || isStreamingAny}
-                      className="p-1.5 rounded-lg border border-border-custom bg-background hover:bg-red-950/20 text-muted-foreground hover:text-red-400 transition-all cursor-pointer disabled:opacity-50"
-                      title="Clear Chat"
-                    >
-                      <Trash2 size={16} />
-                    </button>
-                  )}
-                  <button
-                    type="submit"
-                    disabled={
-                      isSubmitting || isStreamingAny || !prompt.trim() || activeModels.length === 0
-                    }
-                    className="p-2 rounded-lg bg-accent hover:bg-accent-hover text-white transition-all shadow-md cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
-                  >
-                    <ArrowUp size={16} />
-                  </button>
+                      {/* Declare Tie or Tie status */}
+                      {isOwner &&
+                        !turn.winnerModel &&
+                        !turn.responses.modelA.isStreaming &&
+                        !turn.responses.modelB.isStreaming &&
+                        !turn.responses.modelC.isStreaming && (
+                          <div className="flex justify-center mt-2">
+                            <button
+                              onClick={() => handleVote(turn.id, null)}
+                              className="px-4 py-2 rounded-xl border border-border-custom bg-card-bg/60 hover:bg-muted/40 text-xs font-bold transition-all duration-150 flex items-center gap-2 cursor-pointer text-muted-foreground hover:text-foreground shadow-sm"
+                            >
+                              <span>🤝 Declare Tie</span>
+                            </button>
+                          </div>
+                        )}
+
+                      {turn.winnerModel === "tie" && (
+                        <div className="flex justify-center mt-2 select-none">
+                          <span className="px-4 py-2 rounded-xl bg-muted/30 border border-border-custom/50 text-xs font-bold text-muted-foreground tracking-wide">
+                            🤝 Tie Declared
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })
+              )}
+              {error && (
+                <div className="max-w-2xl mx-auto p-4 text-xs text-red-200 bg-red-950/40 border border-red-800 rounded-xl">
+                  {error}
                 </div>
+              )}
+            </div>
+
+            {/* Bottom Prompts Dock */}
+            <div className="absolute bottom-0 inset-x-0 p-6 bg-gradient-to-t from-background via-background to-transparent pointer-events-none flex flex-col items-center">
+              <div className="w-full max-w-4xl pointer-events-auto flex flex-col gap-3">
+                {!isOwner ? (
+                  /* Read-only viewer callout */
+                  <div className="bg-card-bg border border-border-custom rounded-2xl p-5 shadow-xl flex flex-col sm:flex-row items-center justify-between gap-4 w-full">
+                    <div className="flex flex-col gap-1 text-center sm:text-left">
+                      <span className="text-sm font-bold text-foreground">
+                        You are viewing a shared arena comparison
+                      </span>
+                      <span className="text-xs text-muted-foreground">
+                        Start a new thread or sign in to vote and compare models yourself.
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-3 shrink-0">
+                      <button
+                        onClick={handleReset}
+                        className="px-4 py-2 rounded-xl bg-muted/60 hover:bg-muted text-foreground text-xs font-bold transition-colors cursor-pointer"
+                      >
+                        Start New Arena
+                      </button>
+                      <SignInButton mode="modal">
+                        <button className="px-4 py-2 rounded-xl bg-accent hover:bg-accent-hover text-white text-xs font-bold transition-colors cursor-pointer shadow-sm">
+                          Sign In
+                        </button>
+                      </SignInButton>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    {/* Active Model Selection Chips */}
+                    <div className="flex flex-wrap gap-2 px-1 max-h-12 overflow-y-auto">
+                      {activeModels.map((model) => (
+                        <div
+                          key={model.id}
+                          className="px-2.5 py-1 rounded-full border border-border-custom bg-card-bg text-[10px] font-bold flex items-center gap-1.5 shadow-sm text-foreground/90"
+                        >
+                          <span className="w-4 h-4 rounded-full bg-accent/20 border border-accent/30 text-accent flex items-center justify-center font-black text-[9px]">
+                            {model.name.charAt(0).toUpperCase()}
+                          </span>
+                          <span className="truncate max-w-[120px]">
+                            {model.name.split("/")[1] || model.name}
+                          </span>
+                          <button
+                            onClick={() => removeModel(model.id)}
+                            disabled={isSubmitting || isStreamingAny}
+                            className="hover:text-red-400 p-0.5 rounded-full hover:bg-muted/50 cursor-pointer disabled:opacity-50"
+                          >
+                            <X size={10} />
+                          </button>
+                        </div>
+                      ))}
+                      {activeModels.length === 0 && (
+                        <span className="text-[10px] text-red-400 font-bold bg-red-950/30 border border-red-800/30 px-3 py-1 rounded-full select-none animate-pulse">
+                          No active models selected! Add a model to compare.
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Prompt Box */}
+                    <form
+                      onSubmit={handleSubmit}
+                      className="bg-card-bg border border-border-custom rounded-2xl p-4 shadow-xl flex flex-col gap-3"
+                    >
+                      <textarea
+                        value={prompt}
+                        onChange={(e) => setPrompt(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" && !e.shiftKey) {
+                            e.preventDefault();
+                            handleSubmit(e);
+                          }
+                        }}
+                        disabled={isSubmitting || isStreamingAny || activeModels.length === 0}
+                        placeholder="Ask anything. Enter to send, shift + enter for a new line"
+                        className="w-full bg-transparent text-foreground text-sm font-medium focus:outline-none resize-none h-14 placeholder-muted-foreground/75 leading-relaxed pr-10"
+                      />
+
+                      <div className="flex items-center justify-between border-t border-border-custom/40 pt-3 relative">
+                        {/* Model selection popover */}
+                        <div className="relative">
+                          <button
+                            type="button"
+                            onClick={() => setShowModelPicker(!showModelPicker)}
+                            disabled={isSubmitting || isStreamingAny}
+                            className="px-3.5 py-1.5 rounded-lg border border-border-custom bg-background hover:bg-muted/40 text-xs font-bold transition-all duration-150 flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                          >
+                            <Plus size={14} className="text-accent" />
+                            <span>Add Model</span>
+                          </button>
+
+                          {showModelPicker && (
+                            <div className="absolute bottom-10 left-0 bg-card-bg border border-border-custom p-4 rounded-xl shadow-2xl w-64 z-30 flex flex-col gap-3.5 max-h-72 overflow-y-auto">
+                              <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
+                                Available Free Models
+                              </h4>
+                              <div className="flex flex-col gap-2">
+                                {availableModels.map((model) => {
+                                  const isActive = activeModels.some((m) => m.id === model.id);
+                                  const isLimit = activeModels.length >= 3;
+                                  return (
+                                    <button
+                                      key={model.id}
+                                      type="button"
+                                      disabled={isActive || (isLimit && !isActive)}
+                                      onClick={() => {
+                                        addModel(model);
+                                        setShowModelPicker(false);
+                                      }}
+                                      className={`w-full px-3 py-2 rounded-lg border text-left text-xs font-bold flex items-center justify-between transition-all duration-150 ${
+                                        isActive
+                                          ? "bg-accent/10 border-accent/20 text-accent cursor-default"
+                                          : isLimit
+                                            ? "border-border-custom text-muted-foreground cursor-not-allowed opacity-50"
+                                            : "border-border-custom hover:bg-muted/40 text-foreground/90 cursor-pointer"
+                                      }`}
+                                    >
+                                      <div className="flex flex-col min-w-0 pr-2">
+                                        <span className="truncate">{model.name}</span>
+                                        <span className="text-[9px] text-muted-foreground truncate leading-normal">
+                                          {model.context_length.toLocaleString()} ctx
+                                        </span>
+                                      </div>
+                                      {isActive ? (
+                                        <Check size={12} className="shrink-0" />
+                                      ) : isLimit ? (
+                                        <Lock size={12} className="shrink-0" />
+                                      ) : null}
+                                    </button>
+                                  );
+                                })}
+                                {availableModels.length === 0 && (
+                                  <div className="text-center italic text-xs text-muted-foreground py-2 select-none">
+                                    Loading models catalog...
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Form Buttons */}
+                        <div className="flex items-center gap-3">
+                          {turns.length > 0 && (
+                            <button
+                              type="button"
+                              onClick={handleReset}
+                              disabled={isSubmitting || isStreamingAny}
+                              className="p-1.5 rounded-lg border border-border-custom bg-background hover:bg-red-950/20 text-muted-foreground hover:text-red-400 transition-all cursor-pointer disabled:opacity-50"
+                              title="Clear Chat"
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          )}
+                          <button
+                            type="submit"
+                            disabled={
+                              isSubmitting ||
+                              isStreamingAny ||
+                              !prompt.trim() ||
+                              activeModels.length === 0
+                            }
+                            className="p-2 rounded-lg bg-accent hover:bg-accent-hover text-white transition-all shadow-md cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                          >
+                            <ArrowUp size={16} />
+                          </button>
+                        </div>
+                      </div>
+                    </form>
+                  </>
+                )}
               </div>
-            </form>
-          </div>
-        </div>
+            </div>
+          </>
+        )}
       </div>
     </AppShell>
   );
@@ -778,6 +891,7 @@ interface ModelResponseCardProps {
   winnerModel: string | null;
   onVote: () => void;
   isVoted: boolean;
+  isOwner?: boolean;
 }
 
 function ModelResponseCard({
@@ -787,6 +901,7 @@ function ModelResponseCard({
   winnerModel,
   onVote,
   isVoted,
+  isOwner = true,
 }: ModelResponseCardProps) {
   const { text, isStreaming, error, metrics } = state;
   const [showMetrics, setShowMetrics] = useState(false);
@@ -823,7 +938,7 @@ function ModelResponseCard({
               <Check size={12} strokeWidth={3} />
               Winner
             </span>
-          ) : (
+          ) : isOwner ? (
             <button
               onClick={onVote}
               disabled={hasVoteCast || isStreaming || !text}
@@ -835,7 +950,7 @@ function ModelResponseCard({
             >
               Vote
             </button>
-          )}
+          ) : null}
         </div>
       </div>
 

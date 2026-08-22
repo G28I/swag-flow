@@ -11,6 +11,7 @@ const isPublicRoute = createRouteMatcher([
   "/api/arena/prompt",
   "/api/arena/models",
   "/api/arena/vote",
+  "/api/arena/threads(.*)",
 ]);
 
 export default clerkMiddleware(async (auth, req) => {

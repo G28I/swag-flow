@@ -25,7 +25,7 @@ There are rough hand-drawn sketches for the arena screen, the leaderboard, and t
 | 5   | Model picker                                | Slice 1    | completed   |
 | 6   | Send a prompt, parallel streams, and voting | Slice 1    | completed   |
 | 7   | App shell & thread history                  | Slice 2    | completed   |
-| 8   | Public thread visibility & sharing          | Slice 3    | not started |
+| 8   | Public thread visibility & sharing          | Slice 3    | completed   |
 | 9   | Leaderboard: global & personal              | Slice 4    | not started |
 
 ## Foundation
@@ -97,8 +97,8 @@ The frame everything else sits inside: a top bar and sidebar that stay in place 
 
 Anyone should be able to open a thread's link and see it, without an account, that's what actually makes it shareable. Only sending a prompt and voting need sign-in. A made-up or deleted thread just shows a plain not-found page either way. The thread's real owner sees everything everyone else sees, plus the ability to actually use it.
 
-- [ ] Decide the approach
-- [ ] Build it
+- [x] Decide the approach
+- [x] Build it
 
 ## Slice 4: Leaderboard
 
