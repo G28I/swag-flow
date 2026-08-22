@@ -1,6 +1,9 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense } from "react";
+import { useSearchParams } from "next/navigation";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { useModelStream } from "./arena/useModelStream";
 import AppShell from "@/components/AppShell";
 import { SignInButton } from "@clerk/nextjs";
@@ -79,6 +82,23 @@ const FALLBACK_MODELS: ModelItem[] = [
 ];
 
 export default function Home() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex h-screen items-center justify-center bg-background text-foreground text-sm font-semibold">
+          Loading Arena...
+        </div>
+      }
+    >
+      <ArenaContent />
+    </Suspense>
+  );
+}
+
+function ArenaContent() {
+  const searchParams = useSearchParams();
+  const threadParam = searchParams.get("thread");
+
   const [prompt, setPrompt] = useState("");
   const [threadId, setThreadId] = useState<string | null>(null);
   const [threadTitle, setThreadTitle] = useState<string>("Arena");
@@ -103,15 +123,20 @@ export default function Home() {
 
   // Read thread from query parameters and load thread history
   useEffect(() => {
-    const params =
-      typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
-    const targetThreadId = threadId || params?.get("thread");
-    if (!targetThreadId) return;
-
     let cancelled = false;
+
     async function loadThreadHistory() {
+      if (!threadParam) {
+        setThreadId(null);
+        setTurns([]);
+        setThreadTitle("Arena");
+        setIsOwner(true);
+        setIsNotFound(false);
+        return;
+      }
+
       try {
-        const res = await fetch(`/api/arena/threads?id=${targetThreadId}`);
+        const res = await fetch(`/api/arena/threads?id=${threadParam}`);
         if (!res.ok) {
           if (res.status === 404) {
             setIsNotFound(true);
@@ -123,7 +148,7 @@ export default function Home() {
 
         const data = await res.json();
         if (cancelled) return;
-        setThreadId(targetThreadId || null);
+        setThreadId(threadParam);
         setIsNotFound(false);
         setThreadTitle(data.title || "Arena");
         setIsOwner(typeof data.isOwner === "boolean" ? data.isOwner : true);
@@ -255,7 +280,7 @@ export default function Home() {
     return () => {
       cancelled = true;
     };
-  }, [threadId, availableModels]);
+  }, [threadParam, availableModels]);
 
   // Fetch live free-tier models on mount
   useEffect(() => {
@@ -372,6 +397,43 @@ export default function Home() {
 
     const userPrompt = prompt;
     setPrompt(""); // Clear input box
+
+    // Finalize previous turn's responses in state before resetting streaming hooks
+    setTurns((prev) => {
+      if (prev.length === 0) return prev;
+      const copy = [...prev];
+      const last = copy[copy.length - 1];
+      copy[copy.length - 1] = {
+        ...last,
+        responses: {
+          modelA: {
+            ...last.responses.modelA,
+            text: modelA.text || last.responses.modelA.text,
+            error: modelA.error || last.responses.modelA.error,
+            metrics: modelA.metrics || last.responses.modelA.metrics,
+            isStreaming: false,
+            messageId: modelA.messageId || last.responses.modelA.messageId,
+          },
+          modelB: {
+            ...last.responses.modelB,
+            text: modelB.text || last.responses.modelB.text,
+            error: modelB.error || last.responses.modelB.error,
+            metrics: modelB.metrics || last.responses.modelB.metrics,
+            isStreaming: false,
+            messageId: modelB.messageId || last.responses.modelB.messageId,
+          },
+          modelC: {
+            ...last.responses.modelC,
+            text: modelC.text || last.responses.modelC.text,
+            error: modelC.error || last.responses.modelC.error,
+            metrics: modelC.metrics || last.responses.modelC.metrics,
+            isStreaming: false,
+            messageId: modelC.messageId || last.responses.modelC.messageId,
+          },
+        },
+      };
+      return copy;
+    });
 
     // Reset streaming hooks for selected active slots
     modelA.reset();
@@ -955,14 +1017,94 @@ function ModelResponseCard({
       </div>
 
       {/* Card Content */}
-      <div className="flex-1 p-5 text-sm overflow-y-auto leading-relaxed max-h-[350px] font-medium">
+      <div className="flex-1 p-5 text-xs sm:text-sm overflow-y-auto leading-relaxed max-h-[380px] font-normal">
         {error ? (
           <div className="text-red-400 bg-red-950/20 border border-red-900/30 p-4 rounded-xl text-xs font-semibold">
             {error}
           </div>
         ) : text ? (
-          <div className="whitespace-pre-wrap font-sans text-foreground/90 leading-relaxed">
-            {text}
+          <div className="text-foreground/90 space-y-2">
+            <ReactMarkdown
+              remarkPlugins={[remarkGfm]}
+              components={{
+                h1: ({ ...props }) => (
+                  <h1
+                    className="text-base font-extrabold text-foreground mt-3 mb-1.5 pb-1 border-b border-border-custom/50"
+                    {...props}
+                  />
+                ),
+                h2: ({ ...props }) => (
+                  <h2 className="text-sm font-bold text-foreground mt-2.5 mb-1" {...props} />
+                ),
+                h3: ({ ...props }) => (
+                  <h3 className="text-xs font-bold text-foreground/90 mt-2 mb-1" {...props} />
+                ),
+                p: ({ ...props }) => (
+                  <p className="mb-2 leading-relaxed text-foreground/90" {...props} />
+                ),
+                ul: ({ ...props }) => (
+                  <ul
+                    className="list-disc pl-5 mb-2 space-y-1 text-foreground/90 marker:text-accent"
+                    {...props}
+                  />
+                ),
+                ol: ({ ...props }) => (
+                  <ol
+                    className="list-decimal pl-5 mb-2 space-y-1 text-foreground/90 marker:text-accent font-medium"
+                    {...props}
+                  />
+                ),
+                li: ({ ...props }) => <li className="leading-relaxed" {...props} />,
+                strong: ({ ...props }) => (
+                  <strong className="font-bold text-foreground" {...props} />
+                ),
+                em: ({ ...props }) => <em className="italic text-foreground/85" {...props} />,
+                code: ({
+                  className,
+                  children,
+                  ...props
+                }: React.HTMLAttributes<HTMLElement> & { className?: string }) => {
+                  const isInline = !className?.includes("language-");
+                  return isInline ? (
+                    <code
+                      className="px-1.5 py-0.5 rounded bg-muted/60 text-[11px] font-mono text-accent font-semibold"
+                      {...props}
+                    >
+                      {children}
+                    </code>
+                  ) : (
+                    <code
+                      className="block p-3 my-2 rounded-xl bg-background/90 border border-border-custom/60 text-[11px] font-mono text-foreground/90 overflow-x-auto whitespace-pre leading-normal"
+                      {...props}
+                    >
+                      {children}
+                    </code>
+                  );
+                },
+                blockquote: ({ ...props }) => (
+                  <blockquote
+                    className="border-l-2 border-accent/60 pl-3 my-2 text-muted-foreground italic"
+                    {...props}
+                  />
+                ),
+                table: ({ ...props }) => (
+                  <div className="overflow-x-auto my-2 rounded-lg border border-border-custom">
+                    <table className="w-full text-left text-xs" {...props} />
+                  </div>
+                ),
+                th: ({ ...props }) => (
+                  <th
+                    className="p-2 border-b border-border-custom bg-muted/40 font-bold"
+                    {...props}
+                  />
+                ),
+                td: ({ ...props }) => (
+                  <td className="p-2 border-b border-border-custom/40" {...props} />
+                ),
+              }}
+            >
+              {text}
+            </ReactMarkdown>
           </div>
         ) : isStreaming ? (
           <div className="space-y-3 animate-pulse">
