@@ -110,6 +110,12 @@ export async function POST(req: NextRequest) {
     const encoder = new TextEncoder();
     const customStream = new ReadableStream({
       async start(controller) {
+        let startTime = performance.now();
+        let ttft: number | null = null;
+        let tokenCount = 0;
+        let completionText = "";
+        let isFirstToken = true;
+
         try {
           // Send initial metadata containing the DB message ID
           controller.enqueue(
@@ -147,11 +153,8 @@ export async function POST(req: NextRequest) {
 
           const decoder = new TextDecoder();
           let buffer = "";
-          let isFirstToken = true;
-          const startTime = performance.now();
-          let ttft: number | null = null;
-          let tokenCount = 0;
-          let completionText = "";
+          startTime = performance.now();
+          let lastFlushTime = performance.now();
 
           try {
             while (true) {
@@ -188,6 +191,18 @@ export async function POST(req: NextRequest) {
                           `data: ${JSON.stringify({ type: "token", text: content })}\n\n`
                         )
                       );
+
+                      // Periodically flush accumulated text to database (every 1.5s)
+                      const now = performance.now();
+                      if (now - lastFlushTime > 1500 && completionText.length > 0) {
+                        lastFlushTime = now;
+                        prisma.message
+                          .update({
+                            where: { id: assistantMessage.id },
+                            data: { content: completionText },
+                          })
+                          .catch(() => {});
+                      }
                     }
 
                     if (parsed.usage) {
@@ -275,17 +290,28 @@ export async function POST(req: NextRequest) {
           console.error("Error during streaming process:", err);
 
           const errorMessage = err instanceof Error ? err.message : "Unknown error";
+          const elapsed = (performance.now() - startTime) / 1000;
+          const actualTtft = ttft ?? elapsed;
 
-          // Update database to record the failure
-          await prisma.message.update({
-            where: { id: assistantMessage.id },
-            data: {
-              content: "Error: Failed to retrieve a complete answer from the AI model.",
-              latency: 0,
-              ttft: 0,
-              tokenCount: 0,
-            },
-          });
+          // If we already accumulated content, save that content rather than overwriting with error
+          const savedContent =
+            completionText.trim().length > 0
+              ? completionText
+              : "Error: Failed to retrieve a complete answer from the AI model.";
+
+          try {
+            await prisma.message.update({
+              where: { id: assistantMessage.id },
+              data: {
+                content: savedContent,
+                latency: elapsed,
+                ttft: actualTtft,
+                tokenCount,
+              },
+            });
+          } catch (dbErr) {
+            console.error("Failed to update message on stream error:", dbErr);
+          }
 
           // Log failure event in Statsig
           await logStatsigEvent(userId, "model_response_failed", {
@@ -295,16 +321,20 @@ export async function POST(req: NextRequest) {
             error: errorMessage,
           });
 
-          // Inform client of the error
-          controller.enqueue(
-            encoder.encode(
-              `data: ${JSON.stringify({
-                type: "error",
-                message: "An error occurred while calling the model. Please try again.",
-              })}\n\n`
-            )
-          );
-          controller.close();
+          // Inform client of the error if controller is open
+          try {
+            controller.enqueue(
+              encoder.encode(
+                `data: ${JSON.stringify({
+                  type: "error",
+                  message: "An error occurred while calling the model. Please try again.",
+                })}\n\n`
+              )
+            );
+            controller.close();
+          } catch {
+            // Client may have already closed connection
+          }
         }
       },
     });

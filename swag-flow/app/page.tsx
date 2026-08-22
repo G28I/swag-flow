@@ -121,14 +121,38 @@ function ArenaContent() {
   const modelB = useModelStream();
   const modelC = useModelStream();
 
+  // Synchronize turns with localStorage to guard against page refresh data loss
+  useEffect(() => {
+    if (turns.length > 0) {
+      try {
+        localStorage.setItem(`arena_cache_${threadId || "current"}`, JSON.stringify(turns));
+      } catch {
+        // Ignore storage limit errors
+      }
+    }
+  }, [turns, threadId]);
+
   // Read thread from query parameters and load thread history
   useEffect(() => {
     let cancelled = false;
 
     async function loadThreadHistory() {
+      // Optimistic restoration from localStorage while network request completes
+      const targetKey = `arena_cache_${threadParam || "current"}`;
+      try {
+        const cached = localStorage.getItem(targetKey);
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setTurns(parsed);
+          }
+        }
+      } catch {
+        // Ignore parse errors
+      }
+
       if (!threadParam) {
         setThreadId(null);
-        setTurns([]);
         setThreadTitle("Arena");
         setIsOwner(true);
         setIsNotFound(false);
@@ -195,9 +219,19 @@ function ArenaContent() {
                   availableModels.length > 0 ? availableModels.slice(0, 3) : [...FALLBACK_MODELS];
               }
 
-              const rA = replies[0];
-              const rB = replies[1];
-              const rC = replies[2];
+              // Match replies precisely by model ID rather than array index
+              const rA = turnModels[0]?.id
+                ? replies.find((r: { model: string | null }) => r.model === turnModels[0].id) ||
+                  replies[0]
+                : replies[0];
+              const rB = turnModels[1]?.id
+                ? replies.find((r: { model: string | null }) => r.model === turnModels[1].id) ||
+                  replies[1]
+                : replies[1];
+              const rC = turnModels[2]?.id
+                ? replies.find((r: { model: string | null }) => r.model === turnModels[2].id) ||
+                  replies[2]
+                : replies[2];
 
               let winnerModel: string | null = null;
               if (vote) {
@@ -270,6 +304,9 @@ function ArenaContent() {
           );
 
           setTurns(hydratedTurns);
+          try {
+            localStorage.setItem(`arena_cache_${threadParam}`, JSON.stringify(hydratedTurns));
+          } catch {}
         }
       } catch (err) {
         console.error("Failed to load thread history:", err);
