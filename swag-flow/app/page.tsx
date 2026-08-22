@@ -1,9 +1,19 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useModelStream } from "./arena/useModelStream";
 import AppShell from "@/components/AppShell";
-import { ArrowUp, Plus, ChevronDown, ChevronUp, Sparkles, Check, Trash2 } from "lucide-react";
+import {
+  ArrowUp,
+  Plus,
+  ChevronDown,
+  ChevronUp,
+  Sparkles,
+  Check,
+  Trash2,
+  X,
+  Lock,
+} from "lucide-react";
 
 interface StreamMetrics {
   ttft: number;
@@ -12,31 +22,56 @@ interface StreamMetrics {
   tokenCount: number;
 }
 
+interface TurnResponse {
+  text: string;
+  error: string | null;
+  metrics: StreamMetrics | null;
+  isStreaming: boolean;
+}
+
 interface Turn {
   id: string;
   prompt: string;
-  winnerModel: string | null;
+  winnerModel: string | null; // e.g. "modelA" | "modelB" | "modelC"
   responses: {
-    modelA: {
-      text: string;
-      error: string | null;
-      metrics: StreamMetrics | null;
-      isStreaming: boolean;
-    };
-    modelB: {
-      text: string;
-      error: string | null;
-      metrics: StreamMetrics | null;
-      isStreaming: boolean;
-    };
-    modelC: {
-      text: string;
-      error: string | null;
-      metrics: StreamMetrics | null;
-      isStreaming: boolean;
-    };
+    modelA: TurnResponse;
+    modelB: TurnResponse;
+    modelC: TurnResponse;
+  };
+  activeCount: number; // number of models active in this turn
+  models: ModelItem[];
+}
+
+interface ModelItem {
+  id: string;
+  name: string;
+  context_length: number;
+  pricing: {
+    prompt: string;
+    completion: string;
   };
 }
+
+const FALLBACK_MODELS: ModelItem[] = [
+  {
+    id: "google/gemma-4-31b-it:free",
+    name: "Google Gemma 4 31B (Free)",
+    context_length: 32768,
+    pricing: { prompt: "0", completion: "0" },
+  },
+  {
+    id: "nvidia/nemotron-3.5-lightning:free",
+    name: "NVIDIA Nemotron 3.5 Lightning (Free)",
+    context_length: 8192,
+    pricing: { prompt: "0", completion: "0" },
+  },
+  {
+    id: "poolside/laguna-s-2.1:free",
+    name: "Poolside Laguna S 2.1 (Free)",
+    context_length: 16384,
+    pricing: { prompt: "0", completion: "0" },
+  },
+];
 
 export default function Home() {
   const [prompt, setPrompt] = useState("");
@@ -44,21 +79,51 @@ export default function Home() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Active models selection popover state
+  // Dynamic models catalog from server
+  const [availableModels, setAvailableModels] = useState<ModelItem[]>([]);
+  const [activeModels, setActiveModels] = useState<ModelItem[]>([]);
   const [showModelPicker, setShowModelPicker] = useState(false);
-  const [selectedModels, setSelectedModels] = useState({
-    gemini: true,
-    nemotron: true,
-    laguna: true,
-  });
 
-  // Track chat feed history turns locally for the UI-only phase
+  // Track chat feed history turns locally
   const [turns, setTurns] = useState<Turn[]>([]);
 
-  // Initialize streams for the three models
+  // Initialize streams for up to 3 concurrent models
   const modelA = useModelStream();
   const modelB = useModelStream();
   const modelC = useModelStream();
+
+  // Read thread from query parameters on mount or when URL changes
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      const threadParam = params.get("thread");
+      if (threadParam) {
+        requestAnimationFrame(() => {
+          setThreadId(threadParam);
+        });
+      }
+    }
+  }, []);
+
+  // Fetch live free-tier models on mount
+  useEffect(() => {
+    async function loadModels() {
+      try {
+        const res = await fetch("/api/arena/models");
+        if (!res.ok) throw new Error("Failed to load models list");
+        const data: ModelItem[] = await res.json();
+        setAvailableModels(data);
+        // Default select top 3 models
+        setActiveModels(data.slice(0, 3));
+      } catch (err) {
+        console.error("Failed to load active models catalog:", err);
+        setAvailableModels(FALLBACK_MODELS);
+        setActiveModels(FALLBACK_MODELS.slice(0, 3));
+        setError("Unable to load live models list. Using fallback models.");
+      }
+    }
+    loadModels();
+  }, []);
 
   const handleReset = () => {
     setPrompt("");
@@ -69,37 +134,48 @@ export default function Home() {
     modelC.reset();
   };
 
-  const handleVote = (turnId: string, modelName: string) => {
+  const handleVote = (turnId: string, modelSlot: "modelA" | "modelB" | "modelC") => {
     setTurns((prev) =>
-      prev.map((turn) => (turn.id === turnId ? { ...turn, winnerModel: modelName } : turn))
+      prev.map((turn) => (turn.id === turnId ? { ...turn, winnerModel: modelSlot } : turn))
     );
+  };
+
+  const removeModel = (modelId: string) => {
+    setActiveModels((prev) => prev.filter((m) => m.id !== modelId));
+  };
+
+  const addModel = (model: ModelItem) => {
+    if (activeModels.length >= 3) return;
+    if (activeModels.some((m) => m.id === model.id)) return;
+    setActiveModels((prev) => [...prev, model]);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!prompt.trim() || isSubmitting) return;
+    if (!prompt.trim() || isSubmitting || activeModels.length === 0) return;
 
     setIsSubmitting(true);
     setError(null);
 
     const userPrompt = prompt;
-    setPrompt(""); // Clear input box as per modern chat UX
+    setPrompt(""); // Clear input box
 
-    // Reset current active streaming hooks
+    // Reset streaming hooks for selected active slots
     modelA.reset();
     modelB.reset();
     modelC.reset();
 
-    // Create a new Turn placeholder in turns feed list
-    const newTurnId = Math.random().toString(36).substring(7);
+    const turnId = Math.random().toString(36).substring(7);
     const initialTurn: Turn = {
-      id: newTurnId,
+      id: turnId,
       prompt: userPrompt,
       winnerModel: null,
+      activeCount: activeModels.length,
+      models: [...activeModels],
       responses: {
-        modelA: { text: "", error: null, metrics: null, isStreaming: selectedModels.gemini },
-        modelB: { text: "", error: null, metrics: null, isStreaming: selectedModels.nemotron },
-        modelC: { text: "", error: null, metrics: null, isStreaming: selectedModels.laguna },
+        modelA: { text: "", error: null, metrics: null, isStreaming: activeModels.length > 0 },
+        modelB: { text: "", error: null, metrics: null, isStreaming: activeModels.length > 1 },
+        modelC: { text: "", error: null, metrics: null, isStreaming: activeModels.length > 2 },
       },
     };
 
@@ -107,7 +183,7 @@ export default function Home() {
 
     try {
       // 1. Establish thread and user message in database
-      const response = await fetch("/api/arena/prompt", {
+      let response = await fetch("/api/arena/prompt", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -117,7 +193,24 @@ export default function Home() {
 
       if (!response.ok) {
         const errJson = await response.json().catch(() => ({}));
-        throw new Error(errJson.error || `Failed to create prompt: ${response.status}`);
+        // Retry if thread was not found (e.g. sidebar mock thread clicked)
+        if (response.status === 404 && errJson.error === "Thread not found") {
+          console.warn("Thread not found. Retrying with new thread creation...");
+          response = await fetch("/api/arena/prompt", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ prompt: userPrompt, threadId: null }),
+          });
+
+          if (!response.ok) {
+            const retryErrJson = await response.json().catch(() => ({}));
+            throw new Error(retryErrJson.error || `Failed to create prompt: ${response.status}`);
+          }
+        } else {
+          throw new Error(errJson.error || `Failed to create prompt: ${response.status}`);
+        }
       }
 
       const data = await response.json();
@@ -125,61 +218,41 @@ export default function Home() {
       const parentId = data.messageId;
 
       setThreadId(currentThreadId);
+      if (typeof window !== "undefined") {
+        window.history.replaceState(null, "", `/?thread=${currentThreadId}`);
+      }
 
       // 2. Fire OpenRouter streaming connections concurrently
-      const activeHooks = [
-        {
-          key: "modelA",
-          hook: modelA,
-          name: "google/gemma-4-31b-it:free",
-          active: selectedModels.gemini,
-        },
-        {
-          key: "modelB",
-          hook: modelB,
-          name: "nvidia/nemotron-3.5-lightning:free",
-          active: selectedModels.nemotron,
-        },
-        {
-          key: "modelC",
-          hook: modelC,
-          name: "poolside/laguna-s-2.1:free",
-          active: selectedModels.laguna,
-        },
-      ];
-
-      activeHooks.forEach(({ hook, name, active }) => {
-        if (active) {
-          hook.startStream(currentThreadId, parentId, name);
-        }
+      activeModels.forEach((model, idx) => {
+        const hook = idx === 0 ? modelA : idx === 1 ? modelB : modelC;
+        hook.startStream(currentThreadId, parentId, model.id);
       });
     } catch (err: unknown) {
       console.error("Submission error:", err);
       const errMsg =
         err instanceof Error ? err.message : "Failed to submit prompt. Please try again.";
       setError(errMsg);
-      // Update turn with error status
       setTurns((prev) =>
         prev.map((turn) =>
-          turn.id === newTurnId
+          turn.id === turnId
             ? {
                 ...turn,
                 responses: {
                   modelA: {
                     text: "",
-                    error: selectedModels.gemini ? errMsg : null,
+                    error: activeModels.length > 0 ? errMsg : null,
                     metrics: null,
                     isStreaming: false,
                   },
                   modelB: {
                     text: "",
-                    error: selectedModels.nemotron ? errMsg : null,
+                    error: activeModels.length > 1 ? errMsg : null,
                     metrics: null,
                     isStreaming: false,
                   },
                   modelC: {
                     text: "",
-                    error: selectedModels.laguna ? errMsg : null,
+                    error: activeModels.length > 2 ? errMsg : null,
                     metrics: null,
                     isStreaming: false,
                   },
@@ -195,9 +268,8 @@ export default function Home() {
 
   const isStreamingAny = modelA.isStreaming || modelB.isStreaming || modelC.isStreaming;
 
-  // We sync active stream hooks into the latest turn card in the feed
+  // Sync current active streaming hooks into the latest turn card in the feed
   const activeTurns = turns.map((turn, index) => {
-    // If it's the last turn and models are currently streaming, map live hook state
     if (
       index === turns.length - 1 &&
       (isStreamingAny || modelA.text || modelB.text || modelC.text)
@@ -233,7 +305,7 @@ export default function Home() {
     <AppShell breadcrumb="Thread 1">
       <div className="flex flex-col h-[calc(100vh-4rem)] relative bg-background">
         {/* Scrollable Chat Area */}
-        <div className="flex-1 overflow-y-auto px-6 py-8 space-y-8 pb-32">
+        <div className="flex-1 overflow-y-auto px-6 py-8 space-y-8 pb-36">
           {activeTurns.length === 0 ? (
             /* Empty State */
             <div className="max-w-2xl mx-auto text-center py-20 flex flex-col items-center gap-4">
@@ -250,50 +322,60 @@ export default function Home() {
             </div>
           ) : (
             /* Chat Turns */
-            activeTurns.map((turn) => (
-              <div key={turn.id} className="flex flex-col gap-6 max-w-7xl mx-auto w-full">
-                {/* User Message Bubble */}
-                <div className="flex justify-end">
-                  <div className="max-w-xl bg-card-bg border border-border-custom px-5 py-3.5 rounded-2xl text-sm font-semibold shadow-md leading-relaxed">
-                    {turn.prompt}
+            activeTurns.map((turn) => {
+              // Align grid size to active count of models in this turn
+              const gridCols =
+                turn.activeCount === 1
+                  ? "grid-cols-1 max-w-2xl"
+                  : turn.activeCount === 2
+                    ? "grid-cols-1 md:grid-cols-2 max-w-5xl"
+                    : "grid-cols-1 md:grid-cols-3 max-w-7xl";
+
+              return (
+                <div key={turn.id} className="flex flex-col gap-6 w-full mx-auto">
+                  {/* User Message Bubble */}
+                  <div className="flex justify-end max-w-7xl mx-auto w-full">
+                    <div className="max-w-xl bg-card-bg border border-border-custom px-5 py-3.5 rounded-2xl text-sm font-semibold shadow-md leading-relaxed">
+                      {turn.prompt}
+                    </div>
+                  </div>
+
+                  {/* Models Output Columns Grid */}
+                  <div className={`grid gap-6 w-full mx-auto ${gridCols}`}>
+                    {turn.activeCount > 0 && (
+                      <ModelResponseCard
+                        modelName={turn.models[0]?.id || "Model A"}
+                        modelShort={(turn.models[0]?.name || "A").charAt(0).toUpperCase()}
+                        state={turn.responses.modelA}
+                        winnerModel={turn.winnerModel}
+                        onVote={() => handleVote(turn.id, "modelA")}
+                        isVoted={turn.winnerModel === "modelA"}
+                      />
+                    )}
+                    {turn.activeCount > 1 && (
+                      <ModelResponseCard
+                        modelName={turn.models[1]?.id || "Model B"}
+                        modelShort={(turn.models[1]?.name || "B").charAt(0).toUpperCase()}
+                        state={turn.responses.modelB}
+                        winnerModel={turn.winnerModel}
+                        onVote={() => handleVote(turn.id, "modelB")}
+                        isVoted={turn.winnerModel === "modelB"}
+                      />
+                    )}
+                    {turn.activeCount > 2 && (
+                      <ModelResponseCard
+                        modelName={turn.models[2]?.id || "Model C"}
+                        modelShort={(turn.models[2]?.name || "C").charAt(0).toUpperCase()}
+                        state={turn.responses.modelC}
+                        winnerModel={turn.winnerModel}
+                        onVote={() => handleVote(turn.id, "modelC")}
+                        isVoted={turn.winnerModel === "modelC"}
+                      />
+                    )}
                   </div>
                 </div>
-
-                {/* Models Output Columns Grid */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  {selectedModels.gemini && (
-                    <ModelResponseCard
-                      modelName="google/gemma-4-31b-it:free"
-                      modelShort="G"
-                      state={turn.responses.modelA}
-                      winnerModel={turn.winnerModel}
-                      onVote={() => handleVote(turn.id, "gemma")}
-                      isVoted={turn.winnerModel === "gemma"}
-                    />
-                  )}
-                  {selectedModels.nemotron && (
-                    <ModelResponseCard
-                      modelName="nvidia/nemotron-3.5-lightning:free"
-                      modelShort="N"
-                      state={turn.responses.modelB}
-                      winnerModel={turn.winnerModel}
-                      onVote={() => handleVote(turn.id, "nemotron")}
-                      isVoted={turn.winnerModel === "nemotron"}
-                    />
-                  )}
-                  {selectedModels.laguna && (
-                    <ModelResponseCard
-                      modelName="poolside/laguna-s-2.1:free"
-                      modelShort="L"
-                      state={turn.responses.modelC}
-                      winnerModel={turn.winnerModel}
-                      onVote={() => handleVote(turn.id, "laguna")}
-                      isVoted={turn.winnerModel === "laguna"}
-                    />
-                  )}
-                </div>
-              </div>
-            ))
+              );
+            })
           )}
           {error && (
             <div className="max-w-2xl mx-auto p-4 text-xs text-red-200 bg-red-950/40 border border-red-800 rounded-xl">
@@ -303,8 +385,38 @@ export default function Home() {
         </div>
 
         {/* Bottom Prompts Dock */}
-        <div className="absolute bottom-0 inset-x-0 p-6 bg-gradient-to-t from-background via-background to-transparent pointer-events-none flex justify-center">
-          <div className="w-full max-w-4xl pointer-events-auto">
+        <div className="absolute bottom-0 inset-x-0 p-6 bg-gradient-to-t from-background via-background to-transparent pointer-events-none flex flex-col items-center">
+          <div className="w-full max-w-4xl pointer-events-auto flex flex-col gap-3">
+            {/* Active Model Selection Chips */}
+            <div className="flex flex-wrap gap-2 px-1 max-h-12 overflow-y-auto">
+              {activeModels.map((model) => (
+                <div
+                  key={model.id}
+                  className="px-2.5 py-1 rounded-full border border-border-custom bg-card-bg text-[10px] font-bold flex items-center gap-1.5 shadow-sm text-foreground/90"
+                >
+                  <span className="w-4 h-4 rounded-full bg-accent/20 border border-accent/30 text-accent flex items-center justify-center font-black text-[9px]">
+                    {model.name.charAt(0).toUpperCase()}
+                  </span>
+                  <span className="truncate max-w-[120px]">
+                    {model.name.split("/")[1] || model.name}
+                  </span>
+                  <button
+                    onClick={() => removeModel(model.id)}
+                    disabled={isSubmitting || isStreamingAny}
+                    className="hover:text-red-400 p-0.5 rounded-full hover:bg-muted/50 cursor-pointer disabled:opacity-50"
+                  >
+                    <X size={10} />
+                  </button>
+                </div>
+              ))}
+              {activeModels.length === 0 && (
+                <span className="text-[10px] text-red-400 font-bold bg-red-950/30 border border-red-800/30 px-3 py-1 rounded-full select-none animate-pulse">
+                  No active models selected! Add a model to compare.
+                </span>
+              )}
+            </div>
+
+            {/* Prompt Box */}
             <form
               onSubmit={handleSubmit}
               className="bg-card-bg border border-border-custom rounded-2xl p-4 shadow-xl flex flex-col gap-3"
@@ -318,13 +430,13 @@ export default function Home() {
                     handleSubmit(e);
                   }
                 }}
-                disabled={isSubmitting || isStreamingAny}
+                disabled={isSubmitting || isStreamingAny || activeModels.length === 0}
                 placeholder="Ask anything. Enter to send, shift + enter for a new line"
                 className="w-full bg-transparent text-foreground text-sm font-medium focus:outline-none resize-none h-14 placeholder-muted-foreground/75 leading-relaxed pr-10"
               />
 
               <div className="flex items-center justify-between border-t border-border-custom/40 pt-3 relative">
-                {/* Model selection dropdown popover */}
+                {/* Model selection popover */}
                 <div className="relative">
                   <button
                     type="button"
@@ -337,44 +449,50 @@ export default function Home() {
                   </button>
 
                   {showModelPicker && (
-                    <div className="absolute bottom-10 left-0 bg-card-bg border border-border-custom p-4 rounded-xl shadow-2xl w-60 z-30 flex flex-col gap-3.5">
+                    <div className="absolute bottom-10 left-0 bg-card-bg border border-border-custom p-4 rounded-xl shadow-2xl w-64 z-30 flex flex-col gap-3.5 max-h-72 overflow-y-auto">
                       <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
-                        Select Models (1-3)
+                        Available Free Models
                       </h4>
-                      <div className="flex flex-col gap-2.5 text-xs font-bold">
-                        <label className="flex items-center gap-3 cursor-pointer select-none">
-                          <input
-                            type="checkbox"
-                            checked={selectedModels.gemini}
-                            onChange={(e) =>
-                              setSelectedModels((p) => ({ ...p, gemini: e.target.checked }))
-                            }
-                            className="rounded accent-accent"
-                          />
-                          <span>Gemini 2.5 Flash</span>
-                        </label>
-                        <label className="flex items-center gap-3 cursor-pointer select-none">
-                          <input
-                            type="checkbox"
-                            checked={selectedModels.nemotron}
-                            onChange={(e) =>
-                              setSelectedModels((p) => ({ ...p, nemotron: e.target.checked }))
-                            }
-                            className="rounded accent-accent"
-                          />
-                          <span>Nemotron 3.5 Lightning</span>
-                        </label>
-                        <label className="flex items-center gap-3 cursor-pointer select-none">
-                          <input
-                            type="checkbox"
-                            checked={selectedModels.laguna}
-                            onChange={(e) =>
-                              setSelectedModels((p) => ({ ...p, laguna: e.target.checked }))
-                            }
-                            className="rounded accent-accent"
-                          />
-                          <span>Laguna S 2.1</span>
-                        </label>
+                      <div className="flex flex-col gap-2">
+                        {availableModels.map((model) => {
+                          const isActive = activeModels.some((m) => m.id === model.id);
+                          const isLimit = activeModels.length >= 3;
+                          return (
+                            <button
+                              key={model.id}
+                              type="button"
+                              disabled={isActive || (isLimit && !isActive)}
+                              onClick={() => {
+                                addModel(model);
+                                setShowModelPicker(false);
+                              }}
+                              className={`w-full px-3 py-2 rounded-lg border text-left text-xs font-bold flex items-center justify-between transition-all duration-150 ${
+                                isActive
+                                  ? "bg-accent/10 border-accent/20 text-accent cursor-default"
+                                  : isLimit
+                                    ? "border-border-custom text-muted-foreground cursor-not-allowed opacity-50"
+                                    : "border-border-custom hover:bg-muted/40 text-foreground/90 cursor-pointer"
+                              }`}
+                            >
+                              <div className="flex flex-col min-w-0 pr-2">
+                                <span className="truncate">{model.name}</span>
+                                <span className="text-[9px] text-muted-foreground truncate leading-normal">
+                                  {model.context_length.toLocaleString()} ctx
+                                </span>
+                              </div>
+                              {isActive ? (
+                                <Check size={12} className="shrink-0" />
+                              ) : isLimit ? (
+                                <Lock size={12} className="shrink-0" />
+                              ) : null}
+                            </button>
+                          );
+                        })}
+                        {availableModels.length === 0 && (
+                          <div className="text-center italic text-xs text-muted-foreground py-2 select-none">
+                            Loading models catalog...
+                          </div>
+                        )}
                       </div>
                     </div>
                   )}
@@ -395,7 +513,9 @@ export default function Home() {
                   )}
                   <button
                     type="submit"
-                    disabled={isSubmitting || isStreamingAny || !prompt.trim()}
+                    disabled={
+                      isSubmitting || isStreamingAny || !prompt.trim() || activeModels.length === 0
+                    }
                     className="p-2 rounded-lg bg-accent hover:bg-accent-hover text-white transition-all shadow-md cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                   >
                     <ArrowUp size={16} />
@@ -413,12 +533,7 @@ export default function Home() {
 interface ModelResponseCardProps {
   modelName: string;
   modelShort: string;
-  state: {
-    text: string;
-    error: string | null;
-    metrics: StreamMetrics | null;
-    isStreaming: boolean;
-  };
+  state: TurnResponse;
   winnerModel: string | null;
   onVote: () => void;
   isVoted: boolean;
@@ -452,7 +567,10 @@ function ModelResponseCard({
           <div className="w-6 h-6 rounded-lg bg-accent/15 border border-accent/20 flex items-center justify-center font-black text-[10px] text-accent">
             {modelShort}
           </div>
-          <span className="font-bold text-xs text-foreground/90 truncate max-w-[150px]">
+          <span
+            className="font-bold text-xs text-foreground/90 truncate max-w-[150px]"
+            title={modelName}
+          >
             {modelName.split("/")[1] || modelName}
           </span>
         </div>
