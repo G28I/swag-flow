@@ -37,7 +37,19 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 3. Persist vote in database
+    // 3. Verify thread ownership
+    const thread = await prisma.thread.findFirst({
+      where: {
+        id: threadId,
+        userId,
+      },
+    });
+
+    if (!thread) {
+      return NextResponse.json({ error: "Thread not found or unauthorized" }, { status: 404 });
+    }
+
+    // 4. Persist vote in database
     const vote = await prisma.vote.create({
       data: {
         userId,

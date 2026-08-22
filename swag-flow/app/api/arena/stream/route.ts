@@ -54,7 +54,34 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Access denied." }, { status: 403 });
     }
 
-    // 4. Create the assistant message placeholder in the database
+    // 4. Verify thread ownership and parentId validity
+    const thread = await prisma.thread.findFirst({
+      where: {
+        id: threadId,
+        userId,
+      },
+    });
+
+    if (!thread) {
+      return NextResponse.json({ error: "Thread not found or unauthorized" }, { status: 404 });
+    }
+
+    // Verify parent message belongs to this authorized thread
+    const parentMessage = await prisma.message.findFirst({
+      where: {
+        id: parentId,
+        threadId,
+      },
+    });
+
+    if (!parentMessage) {
+      return NextResponse.json(
+        { error: "Parent message not found in this thread" },
+        { status: 400 }
+      );
+    }
+
+    // 5. Create the assistant message placeholder in the database
     const assistantMessage = await prisma.message.create({
       data: {
         role: "assistant",
@@ -65,7 +92,7 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    // 5. Build conversation history up to the parent message
+    // 6. Build conversation history up to the parent message
     const pastMessages = await prisma.message.findMany({
       where: { threadId },
       orderBy: { createdAt: "asc" },
