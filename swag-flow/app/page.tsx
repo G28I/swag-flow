@@ -971,7 +971,7 @@ function ModelResponseCard({
   const hasVoteCast = winnerModel !== null;
 
   return (
-    <div className="flex flex-col min-h-[350px] rounded-2xl border border-border-custom bg-card-bg shadow-md overflow-hidden relative group">
+    <div className="flex flex-col h-[440px] rounded-2xl border border-border-custom bg-card-bg shadow-md overflow-hidden relative group">
       {/* Dynamic top highlight on selection */}
       <div
         className={`absolute top-0 inset-x-0 h-1 transition-all duration-300 ${
@@ -1017,7 +1017,7 @@ function ModelResponseCard({
       </div>
 
       {/* Card Content */}
-      <div className="flex-1 p-5 text-xs sm:text-sm overflow-y-auto leading-relaxed max-h-[380px] font-normal">
+      <div className="flex-1 p-5 text-xs sm:text-sm overflow-y-auto leading-relaxed font-normal">
         {error ? (
           <div className="text-red-400 bg-red-950/20 border border-red-900/30 p-4 rounded-xl text-xs font-semibold">
             {error}
