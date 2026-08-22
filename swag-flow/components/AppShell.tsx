@@ -2,8 +2,8 @@
 
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { UserButton, useUser } from "@clerk/nextjs";
+import { usePathname, useRouter } from "next/navigation";
+import { UserButton, useUser, SignInButton } from "@clerk/nextjs";
 import {
   Menu,
   X,
@@ -15,7 +15,16 @@ import {
   Sun,
   ChevronRight,
   MessageSquare,
+  Trash2,
+  LogIn,
 } from "lucide-react";
+
+interface ThreadItem {
+  id: string;
+  title: string;
+  createdAt: string;
+  updatedAt: string;
+}
 
 interface AppShellProps {
   children: React.ReactNode;
@@ -24,9 +33,12 @@ interface AppShellProps {
 
 export default function AppShell({ children, breadcrumb = "Arena" }: AppShellProps) {
   const pathname = usePathname();
-  const { user } = useUser();
+  const router = useRouter();
+  const { user, isLoaded } = useUser();
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [isDarkMode, setIsDarkMode] = useState(true);
+  const [threads, setThreads] = useState<ThreadItem[]>([]);
+  const [isLoadingThreads, setIsLoadingThreads] = useState(false);
 
   // Initialize theme from localStorage or document class
   useEffect(() => {
@@ -46,6 +58,29 @@ export default function AppShell({ children, breadcrumb = "Arena" }: AppShellPro
     });
   }, []);
 
+  // Fetch threads from API on mount
+  useEffect(() => {
+    let cancelled = false;
+    async function fetchThreads() {
+      setIsLoadingThreads(true);
+      try {
+        const res = await fetch("/api/arena/threads");
+        if (res.ok && !cancelled) {
+          const data: ThreadItem[] = await res.json();
+          setThreads(data);
+        }
+      } catch (err) {
+        console.error("Failed to load threads:", err);
+      } finally {
+        if (!cancelled) setIsLoadingThreads(false);
+      }
+    }
+    fetchThreads();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const toggleTheme = () => {
     const nextDark = !isDarkMode;
     setIsDarkMode(nextDark);
@@ -59,16 +94,41 @@ export default function AppShell({ children, breadcrumb = "Arena" }: AppShellPro
     }
   };
 
+  const handleNewThread = async () => {
+    try {
+      const res = await fetch("/api/arena/threads", { method: "POST" });
+      if (res.ok) {
+        const thread = await res.json();
+        setThreads((prev) => [thread, ...prev]);
+        router.push(`/?thread=${thread.id}`);
+      }
+    } catch (err) {
+      console.error("Failed to create thread:", err);
+    }
+  };
+
+  const handleDeleteThread = async (e: React.MouseEvent, threadId: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    try {
+      const res = await fetch(`/api/arena/threads?id=${threadId}`, { method: "DELETE" });
+      if (res.ok) {
+        setThreads((prev) => prev.filter((t) => t.id !== threadId));
+        // If we're on the deleted thread, navigate home
+        const params = new URLSearchParams(window.location.search);
+        if (params.get("thread") === threadId) {
+          router.push("/");
+        }
+      }
+    } catch (err) {
+      console.error("Failed to delete thread:", err);
+    }
+  };
+
   const navItems = [
     { name: "Arena", path: "/", icon: Layers },
     { name: "Leaderboard", path: "/leaderboard", icon: Trophy },
     { name: "Models", path: "/models", icon: Cpu },
-  ];
-
-  const mockThreads = [
-    { id: "1", title: "Sorting Algorithms Comparison" },
-    { id: "2", title: "React vs Vue Frameworks" },
-    { id: "3", title: "Creative Story writing" },
   ];
 
   return (
@@ -125,45 +185,71 @@ export default function AppShell({ children, breadcrumb = "Arena" }: AppShellPro
             <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
               Your Threads
             </span>
-            <Link
-              href="/"
-              className="p-1 rounded-md hover:bg-muted/50 text-muted-foreground hover:text-foreground transition-colors"
+            <button
+              onClick={handleNewThread}
+              className="p-1 rounded-md hover:bg-muted/50 text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
               title="New Thread"
             >
               <Plus size={16} />
-            </Link>
+            </button>
           </div>
           <div className="flex-1 overflow-y-auto space-y-1 pr-1 scrollbar-thin">
-            {mockThreads.map((thread) => (
-              <Link
-                key={thread.id}
-                href={`/?thread=${thread.id}`}
-                className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-foreground/80 hover:bg-muted/40 hover:text-foreground transition-all duration-150 group border border-transparent hover:border-border-custom/40"
-              >
-                <MessageSquare size={16} className="text-muted-foreground shrink-0" />
-                <span className="truncate flex-1 font-medium">{thread.title}</span>
-                <ChevronRight
-                  size={14}
-                  className="opacity-0 group-hover:opacity-100 text-muted-foreground transition-opacity"
-                />
-              </Link>
-            ))}
+            {isLoadingThreads ? (
+              <div className="px-3 py-4 text-xs text-muted-foreground text-center">Loading…</div>
+            ) : threads.length === 0 ? (
+              <div className="px-3 py-4 text-xs text-muted-foreground text-center">
+                No threads yet. Click + to start one.
+              </div>
+            ) : (
+              threads.map((thread) => (
+                <Link
+                  key={thread.id}
+                  href={`/?thread=${thread.id}`}
+                  className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-foreground/80 hover:bg-muted/40 hover:text-foreground transition-all duration-150 group border border-transparent hover:border-border-custom/40"
+                >
+                  <MessageSquare size={16} className="text-muted-foreground shrink-0" />
+                  <span className="truncate flex-1 font-medium">{thread.title}</span>
+                  <button
+                    onClick={(e) => handleDeleteThread(e, thread.id)}
+                    className="opacity-0 group-hover:opacity-100 p-1 rounded-md hover:bg-red-500/20 text-muted-foreground hover:text-red-400 transition-all cursor-pointer"
+                    title="Delete thread"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                  <ChevronRight
+                    size={14}
+                    className="opacity-0 group-hover:opacity-100 text-muted-foreground transition-opacity"
+                  />
+                </Link>
+              ))
+            )}
           </div>
         </div>
 
         {/* Bottom User Area */}
         <div className="p-4 border-t border-border-custom bg-background/20 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <UserButton />
-            {user && (
-              <div className="flex flex-col min-w-0">
-                <span className="text-sm font-semibold truncate leading-none mb-1">
-                  {user.firstName || user.username || "User"}
-                </span>
-                <span className="text-xs text-muted-foreground truncate leading-none">
-                  {user.primaryEmailAddress?.emailAddress}
-                </span>
-              </div>
+            {isLoaded && user ? (
+              <>
+                <UserButton />
+                <div className="flex flex-col min-w-0">
+                  <span className="text-sm font-semibold truncate leading-none mb-1">
+                    {user.firstName || user.username || "User"}
+                  </span>
+                  <span className="text-xs text-muted-foreground truncate leading-none">
+                    {user.primaryEmailAddress?.emailAddress}
+                  </span>
+                </div>
+              </>
+            ) : isLoaded ? (
+              <SignInButton mode="modal">
+                <button className="flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-semibold bg-accent text-white hover:bg-accent-hover transition-colors cursor-pointer shadow-sm">
+                  <LogIn size={16} />
+                  <span>Sign In</span>
+                </button>
+              </SignInButton>
+            ) : (
+              <div className="text-xs text-muted-foreground">Loading…</div>
             )}
           </div>
           <button

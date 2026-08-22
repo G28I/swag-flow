@@ -5,11 +5,14 @@ const isPublicRoute = createRouteMatcher([
   "/",
   "/models",
   "/leaderboard",
+  "/sign-in(.*)",
+  "/sign-up(.*)",
   // We can make endpoints public in middleware, and enforce auth inside the handlers
   "/api/arena/stream",
   "/api/arena/prompt",
   "/api/arena/models",
   "/api/arena/vote",
+  "/api/arena/threads(.*)",
 ]);
 
 export default clerkMiddleware(async (auth, req) => {
