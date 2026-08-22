@@ -22,9 +22,9 @@ There are rough hand-drawn sketches for the arena screen, the leaderboard, and t
 | 2   | Coding standards & tooling                  | Foundation | completed   |
 | 3   | Data model                                  | Foundation | completed   |
 | 4   | Design & look                               | Foundation | completed   |
-| 5   | Model picker                                | Slice 1    | not started |
-| 6   | Send a prompt, parallel streams, and voting | Slice 1    | not started |
-| 7   | App shell & thread history                  | Slice 2    | not started |
+| 5   | Model picker                                | Slice 1    | completed   |
+| 6   | Send a prompt, parallel streams, and voting | Slice 1    | completed   |
+| 7   | App shell & thread history                  | Slice 2    | completed   |
 | 8   | Public thread visibility & sharing          | Slice 3    | not started |
 | 9   | Leaderboard: global & personal              | Slice 4    | not started |
 

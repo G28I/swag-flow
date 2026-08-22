@@ -28,17 +28,28 @@ export default function AppShell({ children, breadcrumb = "Arena" }: AppShellPro
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [isDarkMode, setIsDarkMode] = useState(true);
 
-  // Initialize theme from document class
+  // Initialize theme from localStorage or document class
   useEffect(() => {
-    const isDark = document.documentElement.classList.contains("dark");
+    const stored = localStorage.getItem("theme");
+    const shouldBeDark = stored
+      ? stored === "dark"
+      : document.documentElement.classList.contains("dark");
     requestAnimationFrame(() => {
-      setIsDarkMode(isDark);
+      setIsDarkMode(shouldBeDark);
+      if (shouldBeDark) {
+        document.documentElement.classList.add("dark");
+        document.documentElement.classList.remove("light");
+      } else {
+        document.documentElement.classList.add("light");
+        document.documentElement.classList.remove("dark");
+      }
     });
   }, []);
 
   const toggleTheme = () => {
     const nextDark = !isDarkMode;
     setIsDarkMode(nextDark);
+    localStorage.setItem("theme", nextDark ? "dark" : "light");
     if (nextDark) {
       document.documentElement.classList.add("dark");
       document.documentElement.classList.remove("light");
