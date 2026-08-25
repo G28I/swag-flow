@@ -16,17 +16,17 @@ There are rough hand-drawn sketches for the arena screen, the leaderboard, and t
 
 ## At a glance
 
-| #   | Feature                                     | Phase      | Status      |
-| --- | ------------------------------------------- | ---------- | ----------- |
-| 1   | Connecting to a model                       | Foundation | completed   |
-| 2   | Coding standards & tooling                  | Foundation | completed   |
-| 3   | Data model                                  | Foundation | completed   |
-| 4   | Design & look                               | Foundation | completed   |
-| 5   | Model picker                                | Slice 1    | completed   |
-| 6   | Send a prompt, parallel streams, and voting | Slice 1    | completed   |
-| 7   | App shell & thread history                  | Slice 2    | completed   |
-| 8   | Public thread visibility & sharing          | Slice 3    | completed   |
-| 9   | Leaderboard: global & personal              | Slice 4    | not started |
+| #   | Feature                                     | Phase      | Status    |
+| --- | ------------------------------------------- | ---------- | --------- |
+| 1   | Connecting to a model                       | Foundation | completed |
+| 2   | Coding standards & tooling                  | Foundation | completed |
+| 3   | Data model                                  | Foundation | completed |
+| 4   | Design & look                               | Foundation | completed |
+| 5   | Model picker                                | Slice 1    | completed |
+| 6   | Send a prompt, parallel streams, and voting | Slice 1    | completed |
+| 7   | App shell & thread history                  | Slice 2    | completed |
+| 8   | Public thread visibility & sharing          | Slice 3    | completed |
+| 9   | Leaderboard: global & personal              | Slice 4    | completed |
 
 ## Foundation
 
@@ -106,8 +106,8 @@ Anyone should be able to open a thread's link and see it, without an account, th
 
 Two leaderboards from the same votes, one for everyone, one just for the signed-in user. Each row's win rate is the big, bold number, in the accent color, with a small bar next to it, always written as "won 4 of 5," never a bare percentage or a made-up score. Smaller, quieter numbers underneath for average speed and time-to-first-token, each clearly labeled. No cost or "cheapest" stat, every model is free, so that number never means anything here. First place gets a subtle highlight, nobody else does.
 
-- [ ] Decide the approach
-- [ ] Build it
+- [x] Decide the approach
+- [x] Build it
 
 ## Not doing right now
 
