@@ -242,16 +242,20 @@ export async function POST(req: NextRequest) {
               totalTime > actualTtft ? tokenCount / (totalTime - actualTtft) : tokenCount;
 
             // Update database with final response content and performance metrics
-            await prisma.message.update({
-              where: { id: assistantMessage.id },
-              data: {
-                content: completionText,
-                latency: totalTime,
-                ttft: actualTtft,
-                tokensPerSec,
-                tokenCount,
-              },
-            });
+            try {
+              await prisma.message.update({
+                where: { id: assistantMessage.id },
+                data: {
+                  content: completionText,
+                  latency: totalTime,
+                  ttft: actualTtft,
+                  tokensPerSec,
+                  tokenCount,
+                },
+              });
+            } catch (dbErr) {
+              console.warn("Notice: Message update skipped or record moved:", dbErr);
+            }
 
             // Log completion metrics in Statsig (fire-and-forget for speed)
             logStatsigEvent(userId, "model_response_completed", {

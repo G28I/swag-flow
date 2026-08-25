@@ -86,8 +86,6 @@ export async function POST(req: NextRequest) {
       const votedMessage = await prisma.message.findFirst({
         where: {
           id: votedMessageId,
-          threadId,
-          parentId: promptId,
           role: "assistant",
         },
       });
