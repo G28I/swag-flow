@@ -150,8 +150,20 @@ function ArenaContent() {
     let cancelled = false;
 
     async function loadThreadHistory() {
-      // Optimistic restoration from localStorage while network request completes
-      const targetKey = `arena_cache_${threadParam || "current"}`;
+      if (!threadParam) {
+        setThreadId(null);
+        setThreadTitle("Swag-flow");
+        setIsOwner(true);
+        setIsNotFound(false);
+        setTurns([]);
+        modelA.reset();
+        modelB.reset();
+        modelC.reset();
+        return;
+      }
+
+      // Optimistic restoration from localStorage for saved thread
+      const targetKey = `arena_cache_${threadParam}`;
       try {
         const cached = localStorage.getItem(targetKey);
         if (cached) {
@@ -162,14 +174,6 @@ function ArenaContent() {
         }
       } catch {
         // Ignore parse errors
-      }
-
-      if (!threadParam) {
-        setThreadId(null);
-        setThreadTitle("Swag-flow");
-        setIsOwner(true);
-        setIsNotFound(false);
-        return;
       }
 
       try {
