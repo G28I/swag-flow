@@ -46,6 +46,8 @@ export async function GET() {
           m.pricing &&
           (m.pricing.prompt === "0" || parseFloat(m.pricing.prompt) === 0) &&
           !m.id.startsWith("thinkingmachines/") &&
+          !m.id.includes("inkling") &&
+          !m.id.includes("ox-alpha") &&
           !m.id.includes("harness")
       )
       .map((m) => ({
