@@ -1,4 +1,10 @@
-import arcjet, { detectBot, shield, tokenBucket, detectPromptInjection } from "@arcjet/next";
+import arcjet, {
+  detectBot,
+  shield,
+  tokenBucket,
+  slidingWindow,
+  detectPromptInjection,
+} from "@arcjet/next";
 import { env } from "./env";
 
 // Base rules shared across all endpoints
@@ -37,6 +43,26 @@ export const promptAj = arcjet({
     ...sharedRules,
     detectPromptInjection({
       mode: "LIVE",
+    }),
+  ],
+});
+
+// Public read client for unauthenticated endpoints (shared thread retrieval, public lookups)
+// Protects against database exhaustion, content scrapers, and malicious query injection
+export const publicReadAj = arcjet({
+  key: env.ARCJET_KEY,
+  rules: [
+    shield({
+      mode: "LIVE",
+    }),
+    detectBot({
+      mode: "LIVE",
+      allow: ["CATEGORY:SEARCH_ENGINE"],
+    }),
+    slidingWindow({
+      mode: "LIVE",
+      interval: "1m",
+      max: 60, // allow up to 60 reads per minute per client IP
     }),
   ],
 });

@@ -1,10 +1,29 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import prisma from "@/app/lib/prisma";
+import { publicReadAj } from "@/app/lib/arcjet";
 
 // GET: List all threads or get a specific thread's history
 export async function GET(req: NextRequest) {
   try {
+    // Arcjet protection (IP-based rate limiting, bot detection, shield) for public reads
+    const decision = await publicReadAj.protect(req);
+    if (decision.isDenied()) {
+      if (decision.reason.isRateLimit()) {
+        return NextResponse.json(
+          { error: "Rate limit exceeded. Please wait a moment before trying again." },
+          { status: 429 }
+        );
+      }
+      if (decision.reason.isBot()) {
+        return NextResponse.json({ error: "Automated access is not allowed." }, { status: 403 });
+      }
+      if (decision.reason.isShield()) {
+        return NextResponse.json({ error: "Suspicious request blocked." }, { status: 403 });
+      }
+      return NextResponse.json({ error: "Access denied." }, { status: 403 });
+    }
+
     const isClerkConfigured =
       process.env.CLERK_SECRET_KEY &&
       process.env.CLERK_SECRET_KEY !== "sk_test_placeholder" &&

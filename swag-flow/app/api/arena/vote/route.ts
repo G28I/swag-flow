@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import prisma from "@/app/lib/prisma";
+import { aj } from "@/app/lib/arcjet";
 import { logStatsigEvent } from "@/app/lib/statsig";
 
 export async function POST(req: NextRequest) {
@@ -24,6 +25,21 @@ export async function POST(req: NextRequest) {
 
     if (!userId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    // 2. Arcjet protection (rate limiting, bot detection, shield)
+    const decision = await aj.protect(req, { userId, requested: 1 });
+    if (decision.isDenied()) {
+      if (decision.reason.isRateLimit()) {
+        return NextResponse.json(
+          { error: "Rate limit exceeded. Please wait a moment before voting again." },
+          { status: 429 }
+        );
+      }
+      if (decision.reason.isBot()) {
+        return NextResponse.json({ error: "Automated voting is not allowed." }, { status: 403 });
+      }
+      return NextResponse.json({ error: "Access denied." }, { status: 403 });
     }
 
     // 2. Parse body inputs
