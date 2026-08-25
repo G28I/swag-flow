@@ -19,6 +19,8 @@ import {
   Lock,
   Share2,
   AlertCircle,
+  Square,
+  RotateCw,
 } from "lucide-react";
 
 interface StreamMetrics {
@@ -605,6 +607,12 @@ function ArenaContent() {
 
   const isStreamingAny = modelA.isStreaming || modelB.isStreaming || modelC.isStreaming;
 
+  const handleStopAll = () => {
+    modelA.abort();
+    modelB.abort();
+    modelC.abort();
+  };
+
   // Sync current active streaming hooks into the latest turn card in the feed
   const activeTurns = turns.map((turn, index) => {
     if (
@@ -743,6 +751,12 @@ function ArenaContent() {
                             onVote={() => handleVote(turn.id, "modelA")}
                             isVoted={turn.winnerModel === "modelA"}
                             isOwner={isOwner}
+                            onStop={() => modelA.abort()}
+                            onRegenerate={() => {
+                              if (threadId && turn.promptId && turn.models[0]) {
+                                modelA.startStream(threadId, turn.promptId, turn.models[0].id);
+                              }
+                            }}
                           />
                         )}
                         {turn.activeCount > 1 && (
@@ -754,6 +768,12 @@ function ArenaContent() {
                             onVote={() => handleVote(turn.id, "modelB")}
                             isVoted={turn.winnerModel === "modelB"}
                             isOwner={isOwner}
+                            onStop={() => modelB.abort()}
+                            onRegenerate={() => {
+                              if (threadId && turn.promptId && turn.models[1]) {
+                                modelB.startStream(threadId, turn.promptId, turn.models[1].id);
+                              }
+                            }}
                           />
                         )}
                         {turn.activeCount > 2 && (
@@ -765,6 +785,12 @@ function ArenaContent() {
                             onVote={() => handleVote(turn.id, "modelC")}
                             isVoted={turn.winnerModel === "modelC"}
                             isOwner={isOwner}
+                            onStop={() => modelC.abort()}
+                            onRegenerate={() => {
+                              if (threadId && turn.promptId && turn.models[2]) {
+                                modelC.startStream(threadId, turn.promptId, turn.models[2].id);
+                              }
+                            }}
                           />
                         )}
                       </div>
@@ -946,11 +972,22 @@ function ArenaContent() {
 
                         {/* Form Buttons */}
                         <div className="flex items-center gap-3">
-                          {turns.length > 0 && (
+                          {isStreamingAny && (
+                            <button
+                              type="button"
+                              onClick={handleStopAll}
+                              className="px-3 py-1.5 rounded-lg bg-red-600 hover:bg-red-700 text-white text-xs font-bold transition-all shadow-md flex items-center gap-1.5 cursor-pointer"
+                              title="Stop all streaming models"
+                            >
+                              <Square size={12} className="fill-current" />
+                              <span>Stop All</span>
+                            </button>
+                          )}
+                          {turns.length > 0 && !isStreamingAny && (
                             <button
                               type="button"
                               onClick={handleReset}
-                              disabled={isSubmitting || isStreamingAny}
+                              disabled={isSubmitting}
                               className="p-1.5 rounded-lg border border-border-custom bg-background hover:bg-red-950/20 text-muted-foreground hover:text-red-400 transition-all cursor-pointer disabled:opacity-50"
                               title="Clear Chat"
                             >
@@ -991,6 +1028,8 @@ interface ModelResponseCardProps {
   onVote: () => void;
   isVoted: boolean;
   isOwner?: boolean;
+  onStop?: () => void;
+  onRegenerate?: () => void;
 }
 
 function ModelResponseCard({
@@ -1001,6 +1040,8 @@ function ModelResponseCard({
   onVote,
   isVoted,
   isOwner = true,
+  onStop,
+  onRegenerate,
 }: ModelResponseCardProps) {
   const { text, isStreaming, error, metrics } = state;
   const [showMetrics, setShowMetrics] = useState(false);
@@ -1030,25 +1071,43 @@ function ModelResponseCard({
           </span>
         </div>
 
-        {/* Voting picker buttons */}
-        <div className="flex items-center">
-          {isVoted ? (
+        {/* Header Action Buttons (Stop, Regenerate, Vote) */}
+        <div className="flex items-center gap-2">
+          {isStreaming && onStop ? (
+            <button
+              onClick={onStop}
+              className="px-2.5 py-1 rounded-lg bg-red-500/15 border border-red-500/30 text-red-400 hover:bg-red-500 hover:text-white text-[10px] font-bold flex items-center gap-1 transition-all cursor-pointer shadow-sm"
+              title="Stop streaming this response"
+            >
+              <Square size={10} className="fill-current" />
+              <span>Stop</span>
+            </button>
+          ) : isVoted ? (
             <span className="px-2.5 py-1 rounded-lg bg-accent text-white text-[10px] font-bold flex items-center gap-1">
               <Check size={12} strokeWidth={3} />
               Winner
             </span>
           ) : isOwner ? (
-            <button
-              onClick={onVote}
-              disabled={hasVoteCast || isStreaming || !text}
-              className={`px-3 py-1.5 rounded-lg border text-[10px] font-bold transition-all duration-150 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${
-                hasVoteCast
-                  ? "border-border-custom text-muted-foreground"
-                  : "border-accent bg-accent/10 text-accent hover:bg-accent hover:text-white"
-              }`}
-            >
-              Vote
-            </button>
+            <div className="flex items-center gap-1.5">
+              {!isStreaming && onRegenerate && (
+                <button
+                  onClick={onRegenerate}
+                  className="p-1.5 rounded-lg border border-border-custom bg-background hover:bg-muted/50 text-muted-foreground hover:text-foreground transition-all cursor-pointer"
+                  title="Regenerate this response"
+                >
+                  <RotateCw size={12} />
+                </button>
+              )}
+              <button
+                onClick={onVote}
+                disabled={hasVoteCast || isStreaming || !text}
+                className={`px-3 py-1.5 rounded-lg border text-[10px] font-bold transition-all duration-150 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${
+                  hasVoteCast
+                    ? "border-border-custom text-muted-foreground"
+                    : "border-accent bg-accent/10 text-accent hover:bg-accent hover:text-white"
+                }`}
+              ></button>
+            </div>
           ) : null}
         </div>
       </div>

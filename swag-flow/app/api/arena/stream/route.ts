@@ -54,25 +54,19 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Access denied." }, { status: 403 });
     }
 
-    // 4. Verify thread ownership and parentId validity
-    const thread = await prisma.thread.findFirst({
-      where: {
-        id: threadId,
-        userId,
-      },
-    });
+    // 4. Verify thread ownership and parentId validity (parallelized for speed)
+    const [thread, parentMessage] = await Promise.all([
+      prisma.thread.findFirst({
+        where: { id: threadId, userId },
+      }),
+      prisma.message.findFirst({
+        where: { id: parentId, threadId },
+      }),
+    ]);
 
     if (!thread) {
       return NextResponse.json({ error: "Thread not found or unauthorized" }, { status: 404 });
     }
-
-    // Verify parent message belongs to this authorized thread
-    const parentMessage = await prisma.message.findFirst({
-      where: {
-        id: parentId,
-        threadId,
-      },
-    });
 
     if (!parentMessage) {
       return NextResponse.json(
@@ -192,9 +186,9 @@ export async function POST(req: NextRequest) {
                         )
                       );
 
-                      // Periodically flush accumulated text to database (every 1.5s)
+                      // Periodically flush accumulated text to database (every 3s — final write on done is authoritative)
                       const now = performance.now();
-                      if (now - lastFlushTime > 1500 && completionText.length > 0) {
+                      if (now - lastFlushTime > 3000 && completionText.length > 0) {
                         lastFlushTime = now;
                         prisma.message
                           .update({
@@ -258,8 +252,8 @@ export async function POST(req: NextRequest) {
               },
             });
 
-            // Log completion metrics in Statsig
-            await logStatsigEvent(userId, "model_response_completed", {
+            // Log completion metrics in Statsig (fire-and-forget for speed)
+            logStatsigEvent(userId, "model_response_completed", {
               threadId,
               model,
               messageId: assistantMessage.id,
@@ -268,7 +262,7 @@ export async function POST(req: NextRequest) {
               tokensPerSec,
               tokenCount,
               status: "success",
-            });
+            }).catch(() => {});
 
             // Send completion metadata to the client
             controller.enqueue(
@@ -313,13 +307,13 @@ export async function POST(req: NextRequest) {
             console.error("Failed to update message on stream error:", dbErr);
           }
 
-          // Log failure event in Statsig
-          await logStatsigEvent(userId, "model_response_failed", {
+          // Log failure event in Statsig (fire-and-forget)
+          logStatsigEvent(userId, "model_response_failed", {
             threadId,
             model,
             messageId: assistantMessage.id,
             error: errorMessage,
-          });
+          }).catch(() => {});
 
           // Inform client of the error if controller is open
           try {

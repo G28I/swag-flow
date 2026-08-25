@@ -93,11 +93,11 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    // 6. Track event in Statsig
-    await logStatsigEvent(userId, "prompt_created", {
+    // 6. Track event in Statsig (fire-and-forget for speed)
+    logStatsigEvent(userId, "prompt_created", {
       threadId: targetThreadId,
       messageId: userMessage.id,
-    });
+    }).catch(() => {});
 
     return NextResponse.json({
       threadId: targetThreadId,
