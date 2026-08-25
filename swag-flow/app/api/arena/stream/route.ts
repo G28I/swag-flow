@@ -54,13 +54,26 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Access denied." }, { status: 403 });
     }
 
-    // 4. Verify thread ownership and parentId validity (parallelized for speed)
-    const [thread, parentMessage] = await Promise.all([
+    // 4. Parallelize thread verification, parent lookup, past messages fetch, and placeholder creation for ultra-fast startup
+    const [thread, parentMessage, pastMessages, assistantMessage] = await Promise.all([
       prisma.thread.findFirst({
         where: { id: threadId, userId },
       }),
       prisma.message.findFirst({
         where: { id: parentId, threadId },
+      }),
+      prisma.message.findMany({
+        where: { threadId },
+        orderBy: { createdAt: "asc" },
+      }),
+      prisma.message.create({
+        data: {
+          role: "assistant",
+          content: "",
+          model,
+          threadId,
+          parentId,
+        },
       }),
     ]);
 
@@ -75,23 +88,6 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 5. Create the assistant message placeholder in the database
-    const assistantMessage = await prisma.message.create({
-      data: {
-        role: "assistant",
-        content: "",
-        model,
-        threadId,
-        parentId,
-      },
-    });
-
-    // 6. Build conversation history up to the parent message
-    const pastMessages = await prisma.message.findMany({
-      where: { threadId },
-      orderBy: { createdAt: "asc" },
-    });
-
     const parentIndex = pastMessages.findIndex((m) => m.id === parentId);
     const messagesToStream = (
       parentIndex !== -1 ? pastMessages.slice(0, parentIndex + 1) : pastMessages
@@ -100,7 +96,7 @@ export async function POST(req: NextRequest) {
       content: m.content,
     }));
 
-    // 6. Return standard Server-Sent Events (SSE) Response
+    // 5. Return standard Server-Sent Events (SSE) Response
     const encoder = new TextEncoder();
     const customStream = new ReadableStream({
       async start(controller) {
@@ -118,7 +114,7 @@ export async function POST(req: NextRequest) {
             )
           );
 
-          // Fetch OpenRouter API stream
+          // Fetch OpenRouter API stream without proxy buffering options for maximum response speed
           const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
             method: "POST",
             headers: {
@@ -131,7 +127,6 @@ export async function POST(req: NextRequest) {
               model,
               messages: messagesToStream,
               stream: true,
-              stream_options: { include_usage: true },
             }),
             signal: AbortSignal.timeout(35000),
           });

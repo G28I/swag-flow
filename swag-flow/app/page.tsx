@@ -240,17 +240,23 @@ function ArenaContent() {
                   availableModels.length > 0 ? availableModels.slice(0, 3) : [...FALLBACK_MODELS];
               }
 
-              // Match replies precisely by model ID rather than array index
+              // Match replies precisely by latest model response
               const rA = turnModels[0]?.id
-                ? replies.find((r: { model: string | null }) => r.model === turnModels[0].id) ||
+                ? [...replies]
+                    .reverse()
+                    .find((r: { model: string | null }) => r.model === turnModels[0].id) ||
                   replies[0]
                 : replies[0];
               const rB = turnModels[1]?.id
-                ? replies.find((r: { model: string | null }) => r.model === turnModels[1].id) ||
+                ? [...replies]
+                    .reverse()
+                    .find((r: { model: string | null }) => r.model === turnModels[1].id) ||
                   replies[1]
                 : replies[1];
               const rC = turnModels[2]?.id
-                ? replies.find((r: { model: string | null }) => r.model === turnModels[2].id) ||
+                ? [...replies]
+                    .reverse()
+                    .find((r: { model: string | null }) => r.model === turnModels[2].id) ||
                   replies[2]
                 : replies[2];
 
