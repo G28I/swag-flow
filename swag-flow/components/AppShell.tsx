@@ -153,7 +153,16 @@ export default function AppShell({ children, breadcrumb = "Arena" }: AppShellPro
       >
         {/* Title Logo */}
         <div className="flex items-center justify-between px-6 py-5 border-b border-border-custom bg-background/30">
-          <Link href="/" className="flex items-center gap-3">
+          <Link
+            href="/"
+            onClick={(e) => {
+              if (typeof window !== "undefined" && window.location.search.includes("thread")) {
+                e.preventDefault();
+                router.push("/");
+              }
+            }}
+            className="flex items-center gap-3"
+          >
             <div className="w-8 h-8 rounded-lg bg-accent flex items-center justify-center font-bold text-lg text-white shadow-md">
               S
             </div>
@@ -176,6 +185,17 @@ export default function AppShell({ children, breadcrumb = "Arena" }: AppShellPro
               <Link
                 key={item.name}
                 href={item.path}
+                onClick={(e) => {
+                  if (item.path === "/") {
+                    if (
+                      typeof window !== "undefined" &&
+                      window.location.search.includes("thread")
+                    ) {
+                      e.preventDefault();
+                      router.push("/");
+                    }
+                  }
+                }}
                 className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold transition-all duration-200 ${
                   isActive
                     ? "bg-accent text-white shadow-md shadow-accent/20"

@@ -843,7 +843,7 @@ function ArenaContent() {
         ) : (
           <>
             {/* Scrollable Chat Area */}
-            <div className="flex-1 overflow-y-auto px-6 py-8 space-y-8 pb-36">
+            <div className="flex-1 overflow-y-auto px-6 py-8 space-y-8 pb-80 sm:pb-96 scrollbar-thin">
               {activeTurns.length === 0 ? (
                 /* Empty State */
                 <div className="max-w-2xl mx-auto text-center py-20 flex flex-col items-center gap-4">
