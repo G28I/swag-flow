@@ -21,6 +21,9 @@ import {
   AlertCircle,
   Square,
   RotateCw,
+  Pencil,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 
 interface StreamMetrics {
@@ -117,6 +120,14 @@ function ArenaContent() {
 
   // Track chat feed history turns locally
   const [turns, setTurns] = useState<Turn[]>([]);
+
+  // Prompt Editing & Branch Versioning
+  const [editingTurnId, setEditingTurnId] = useState<string | null>(null);
+  const [editingText, setEditingText] = useState("");
+  // Turn version history map: turnId -> array of alternative Turn versions
+  const [turnVersionsMap, setTurnVersionsMap] = useState<Record<string, Turn[]>>({});
+  // Current active version index per turnId: turnId -> versionIndex
+  const [activeVersionIndexMap, setActiveVersionIndexMap] = useState<Record<string, number>>({});
 
   // Initialize streams for up to 3 concurrent models
   const modelA = useModelStream();
@@ -415,6 +426,133 @@ function ArenaContent() {
       console.error("Voting error:", err);
       setError("Failed to record vote. Please try again.");
     }
+  };
+
+  const handleStartEdit = (turnId: string, currentPrompt: string) => {
+    setEditingTurnId(turnId);
+    setEditingText(currentPrompt);
+  };
+
+  const handleCancelEdit = () => {
+    setEditingTurnId(null);
+    setEditingText("");
+  };
+
+  const handleEditSubmit = async (turnId: string, editedPromptText: string) => {
+    if (!editedPromptText.trim() || isSubmitting || activeModels.length === 0) return;
+
+    const targetTurnIndex = turns.findIndex((t) => t.id === turnId);
+    if (targetTurnIndex === -1) return;
+
+    setIsSubmitting(true);
+    setError(null);
+    setEditingTurnId(null);
+
+    const currentTurn = turns[targetTurnIndex];
+
+    // Save existing version of this turn in history map
+    const existingVersions = turnVersionsMap[turnId] || [currentTurn];
+    const newVersionIndex = existingVersions.length;
+    const updatedVersions = [...existingVersions];
+
+    setTurnVersionsMap((prev) => ({
+      ...prev,
+      [turnId]: updatedVersions,
+    }));
+
+    setActiveVersionIndexMap((prev) => ({
+      ...prev,
+      [turnId]: newVersionIndex,
+    }));
+
+    // Reset stream hooks
+    modelA.reset();
+    modelB.reset();
+    modelC.reset();
+
+    const newTurn: Turn = {
+      id: turnId,
+      prompt: editedPromptText.trim(),
+      winnerModel: null,
+      activeCount: activeModels.length,
+      models: [...activeModels],
+      responses: {
+        modelA: {
+          text: "",
+          error: null,
+          metrics: null,
+          isStreaming: activeModels.length > 0,
+          messageId: null,
+        },
+        modelB: {
+          text: "",
+          error: null,
+          metrics: null,
+          isStreaming: activeModels.length > 1,
+          messageId: null,
+        },
+        modelC: {
+          text: "",
+          error: null,
+          metrics: null,
+          isStreaming: activeModels.length > 2,
+          messageId: null,
+        },
+      },
+      promptId: "",
+    };
+
+    // Update history map with new version included
+    setTurnVersionsMap((prev) => ({
+      ...prev,
+      [turnId]: [...(prev[turnId] || [currentTurn]), newTurn],
+    }));
+
+    // Truncate turns feed up to edited turn
+    setTurns((prev) => {
+      const slice = prev.slice(0, targetTurnIndex);
+      return [...slice, newTurn];
+    });
+
+    try {
+      const response = await fetch("/api/arena/prompt", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt: editedPromptText.trim(), threadId }),
+      });
+
+      if (!response.ok) {
+        const errJson = await response.json().catch(() => ({}));
+        throw new Error(errJson.error || "Failed to create prompt version.");
+      }
+
+      const data = await response.json();
+      const parentId = data.messageId;
+      const currentThreadId = data.threadId;
+      setThreadId(currentThreadId);
+
+      setTurns((prev) => prev.map((t) => (t.id === turnId ? { ...t, promptId: parentId } : t)));
+
+      activeModels.forEach((model, idx) => {
+        const hook = idx === 0 ? modelA : idx === 1 ? modelB : modelC;
+        hook.startStream(currentThreadId, parentId, model.id);
+      });
+    } catch (err: unknown) {
+      console.error("Edit submission error:", err);
+      setError(err instanceof Error ? err.message : "Failed to re-run prompt version.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleSwitchVersion = (turnId: string, targetVersionIndex: number) => {
+    const versions = turnVersionsMap[turnId];
+    if (!versions || targetVersionIndex < 0 || targetVersionIndex >= versions.length) return;
+
+    setActiveVersionIndexMap((prev) => ({ ...prev, [turnId]: targetVersionIndex }));
+
+    const targetTurn = versions[targetVersionIndex];
+    setTurns((prev) => prev.map((t) => (t.id === turnId ? targetTurn : t)));
   };
 
   const removeModel = (modelId: string) => {
@@ -733,11 +871,87 @@ function ArenaContent() {
 
                   return (
                     <div key={turn.id} className="flex flex-col gap-6 w-full mx-auto">
-                      {/* User Message Bubble */}
-                      <div className="flex justify-end max-w-7xl mx-auto w-full">
-                        <div className="max-w-xl bg-card-bg border border-border-custom px-5 py-3.5 rounded-2xl text-sm font-semibold shadow-md leading-relaxed">
-                          {turn.prompt}
-                        </div>
+                      {/* User Message Bubble with Editing & Version Controls */}
+                      <div className="flex flex-col items-end max-w-7xl mx-auto w-full gap-1.5 group/prompt">
+                        {/* Version Switcher Controls */}
+                        {turnVersionsMap[turn.id] && turnVersionsMap[turn.id].length > 1 && (
+                          <div className="flex items-center gap-1.5 bg-card-bg/90 border border-border-custom px-2.5 py-1 rounded-xl text-[10px] font-bold text-muted-foreground shadow-sm">
+                            <button
+                              onClick={() =>
+                                handleSwitchVersion(
+                                  turn.id,
+                                  (activeVersionIndexMap[turn.id] || 0) - 1
+                                )
+                              }
+                              disabled={(activeVersionIndexMap[turn.id] || 0) <= 0}
+                              className="hover:text-accent disabled:opacity-30 cursor-pointer disabled:cursor-default transition-colors"
+                              title="Previous prompt version"
+                            >
+                              <ChevronLeft size={13} />
+                            </button>
+                            <span>
+                              Version {(activeVersionIndexMap[turn.id] || 0) + 1} of{" "}
+                              {turnVersionsMap[turn.id].length}
+                            </span>
+                            <button
+                              onClick={() =>
+                                handleSwitchVersion(
+                                  turn.id,
+                                  (activeVersionIndexMap[turn.id] || 0) + 1
+                                )
+                              }
+                              disabled={
+                                (activeVersionIndexMap[turn.id] || 0) >=
+                                turnVersionsMap[turn.id].length - 1
+                              }
+                              className="hover:text-accent disabled:opacity-30 cursor-pointer disabled:cursor-default transition-colors"
+                              title="Next prompt version"
+                            >
+                              <ChevronRight size={13} />
+                            </button>
+                          </div>
+                        )}
+
+                        {/* Prompt Bubble / Inline Editor */}
+                        {editingTurnId === turn.id ? (
+                          <div className="max-w-xl w-full bg-card-bg border border-accent/50 rounded-2xl p-3.5 shadow-xl flex flex-col gap-3">
+                            <textarea
+                              value={editingText}
+                              onChange={(e) => setEditingText(e.target.value)}
+                              className="w-full bg-background text-foreground text-sm font-medium p-3 rounded-xl border border-border-custom focus:outline-none resize-none h-24 leading-relaxed"
+                              placeholder="Edit your prompt..."
+                            />
+                            <div className="flex items-center justify-end gap-2">
+                              <button
+                                onClick={handleCancelEdit}
+                                disabled={isSubmitting}
+                                className="px-3 py-1.5 rounded-xl bg-muted/60 text-foreground text-xs font-bold hover:bg-muted transition-colors cursor-pointer"
+                              >
+                                Cancel
+                              </button>
+                              <button
+                                onClick={() => handleEditSubmit(turn.id, editingText)}
+                                disabled={isSubmitting || !editingText.trim()}
+                                className="px-3.5 py-1.5 rounded-xl bg-accent text-white text-xs font-bold hover:bg-accent-hover transition-colors shadow-sm cursor-pointer disabled:opacity-50"
+                              >
+                                {isSubmitting ? "Submitting..." : "Submit & Re-run"}
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="relative max-w-xl bg-card-bg border border-border-custom px-5 py-3.5 rounded-2xl text-sm font-semibold shadow-md leading-relaxed group/bubble">
+                            <span>{turn.prompt}</span>
+                            {isOwner && !isStreamingAny && (
+                              <button
+                                onClick={() => handleStartEdit(turn.id, turn.prompt)}
+                                className="absolute -left-9 top-3.5 p-1.5 rounded-lg border border-border-custom/60 bg-card-bg hover:bg-muted text-muted-foreground hover:text-foreground opacity-0 group-hover/prompt:opacity-100 transition-all cursor-pointer shadow-sm"
+                                title="Edit prompt"
+                              >
+                                <Pencil size={13} />
+                              </button>
+                            )}
+                          </div>
+                        )}
                       </div>
 
                       {/* Models Output Columns Grid */}

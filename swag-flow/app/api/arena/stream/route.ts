@@ -133,6 +133,7 @@ export async function POST(req: NextRequest) {
               stream: true,
               stream_options: { include_usage: true },
             }),
+            signal: AbortSignal.timeout(35000),
           });
 
           if (!response.ok) {
@@ -283,15 +284,22 @@ export async function POST(req: NextRequest) {
         } catch (err: unknown) {
           console.error("Error during streaming process:", err);
 
-          const errorMessage = err instanceof Error ? err.message : "Unknown error";
+          const isTimeout =
+            err instanceof Error &&
+            (err.name === "TimeoutError" ||
+              err.name === "AbortError" ||
+              err.message.toLowerCase().includes("timeout"));
+          const errorMessage = isTimeout
+            ? "Model request timed out after 35 seconds. Click 🔄 to retry."
+            : err instanceof Error
+              ? err.message
+              : "Unknown error";
           const elapsed = (performance.now() - startTime) / 1000;
           const actualTtft = ttft ?? elapsed;
 
           // If we already accumulated content, save that content rather than overwriting with error
           const savedContent =
-            completionText.trim().length > 0
-              ? completionText
-              : "Error: Failed to retrieve a complete answer from the AI model.";
+            completionText.trim().length > 0 ? completionText : `Error: ${errorMessage}`;
 
           try {
             await prisma.message.update({

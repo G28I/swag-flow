@@ -84,12 +84,19 @@ export function useModelStream() {
       const controller = new AbortController();
       abortRef.current = controller;
 
-      setIsStreaming(true);
-      setError(null);
-      setText("");
-      setMetrics(null);
-      setMessageId(null);
-      textBufferRef.current = "";
+      const watchdogRef = { id: null as NodeJS.Timeout | null };
+      const resetWatchdog = () => {
+        if (watchdogRef.id) clearTimeout(watchdogRef.id);
+        watchdogRef.id = setTimeout(() => {
+          if (!controller.signal.aborted) {
+            controller.abort();
+            setError("Model response timed out. Click 🔄 to retry.");
+            setIsStreaming(false);
+          }
+        }, 40000);
+      };
+
+      resetWatchdog();
 
       try {
         const response = await fetch("/api/arena/stream", {
@@ -118,6 +125,8 @@ export function useModelStream() {
           const { done, value } = await reader.read();
           if (done) break;
 
+          resetWatchdog(); // Reset timer on each data chunk received
+
           buffer += decoder.decode(value, { stream: true });
           const lines = buffer.split("\n");
           buffer = lines.pop() || "";
@@ -137,6 +146,7 @@ export function useModelStream() {
                   textBufferRef.current += event.text;
                   scheduleFlush();
                 } else if (event.type === "done") {
+                  if (watchdogRef.id) clearTimeout(watchdogRef.id);
                   // Flush any remaining text immediately before setting metrics
                   if (textBufferRef.current) {
                     const remaining = textBufferRef.current;
