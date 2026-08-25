@@ -54,8 +54,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Access denied." }, { status: 403 });
     }
 
-    // 4. Parallelize thread verification, parent lookup, past messages fetch, and placeholder creation for ultra-fast startup
-    const [thread, parentMessage, pastMessages, assistantMessage] = await Promise.all([
+    // 4. Parallelize thread verification, parent lookup, and past messages fetch (READ only)
+    const [thread, parentMessage, pastMessages] = await Promise.all([
       prisma.thread.findFirst({
         where: { id: threadId, userId },
       }),
@@ -66,17 +66,9 @@ export async function POST(req: NextRequest) {
         where: { threadId },
         orderBy: { createdAt: "asc" },
       }),
-      prisma.message.create({
-        data: {
-          role: "assistant",
-          content: "",
-          model,
-          threadId,
-          parentId,
-        },
-      }),
     ]);
 
+    // 5. Enforce thread ownership and parent message validity before writing any data
     if (!thread) {
       return NextResponse.json({ error: "Thread not found or unauthorized" }, { status: 404 });
     }
@@ -87,6 +79,17 @@ export async function POST(req: NextRequest) {
         { status: 400 }
       );
     }
+
+    // 6. Create assistant message placeholder in database only after authorization passes
+    const assistantMessage = await prisma.message.create({
+      data: {
+        role: "assistant",
+        content: "",
+        model,
+        threadId,
+        parentId,
+      },
+    });
 
     const parentIndex = pastMessages.findIndex((m) => m.id === parentId);
     const messagesToStream = (
