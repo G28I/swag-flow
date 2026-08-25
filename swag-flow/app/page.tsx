@@ -101,7 +101,7 @@ function ArenaContent() {
 
   const [prompt, setPrompt] = useState("");
   const [threadId, setThreadId] = useState<string | null>(null);
-  const [threadTitle, setThreadTitle] = useState<string>("Arena");
+  const [threadTitle, setThreadTitle] = useState<string>("Swag-flow");
   const [isOwner, setIsOwner] = useState(true);
   const [isNotFound, setIsNotFound] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -153,7 +153,7 @@ function ArenaContent() {
 
       if (!threadParam) {
         setThreadId(null);
-        setThreadTitle("Arena");
+        setThreadTitle("Swag-flow");
         setIsOwner(true);
         setIsNotFound(false);
         return;
@@ -174,7 +174,7 @@ function ArenaContent() {
         if (cancelled) return;
         setThreadId(threadParam);
         setIsNotFound(false);
-        setThreadTitle(data.title || "Arena");
+        setThreadTitle(data.title || "Swag-flow");
         setIsOwner(typeof data.isOwner === "boolean" ? data.isOwner : true);
 
         if (Array.isArray(data.messages)) {

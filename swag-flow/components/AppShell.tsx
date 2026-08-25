@@ -149,9 +149,9 @@ export default function AppShell({ children, breadcrumb = "Arena" }: AppShellPro
         <div className="flex items-center justify-between px-6 py-5 border-b border-border-custom bg-background/30">
           <Link href="/" className="flex items-center gap-3">
             <div className="w-8 h-8 rounded-lg bg-accent flex items-center justify-center font-bold text-lg text-white shadow-md">
-              A
+              S
             </div>
-            <span className="font-semibold text-lg tracking-tight font-sans">LLM Arena</span>
+            <span className="font-semibold text-lg tracking-tight font-sans">Swag-flow</span>
           </Link>
           <button
             onClick={() => setSidebarOpen(false)}
@@ -308,7 +308,7 @@ export default function AppShell({ children, breadcrumb = "Arena" }: AppShellPro
               </button>
             )}
             <div className="flex items-center gap-2 text-sm text-muted-foreground font-semibold">
-              <span>Arena</span>
+              <span>Swag-flow</span>
               <span>/</span>
               <span className="text-foreground font-bold">{breadcrumb}</span>
             </div>

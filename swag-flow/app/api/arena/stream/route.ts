@@ -131,7 +131,7 @@ export async function POST(req: NextRequest) {
               Authorization: `Bearer ${env.OPENROUTER_API_KEY}`,
               "Content-Type": "application/json",
               "HTTP-Referer": "http://localhost:3000",
-              "X-Title": "LLM Arena",
+              "X-Title": "Swag-flow",
             },
             body: JSON.stringify({
               model,

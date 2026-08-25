@@ -24,7 +24,7 @@ export async function GET() {
     const res = await fetch("https://openrouter.ai/api/v1/models", {
       headers: {
         "HTTP-Referer": "https://github.com/G28I/swag-flow",
-        "X-Title": "Swag-flow LLM Arena",
+        "X-Title": "Swag-flow",
       },
     });
 

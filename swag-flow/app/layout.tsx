@@ -14,8 +14,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "LLM Arena",
-  description: "Compare LLMs side by side, vote on responses",
+  title: "Swag-flow",
+  description: "Concurrent LLM evaluation and benchmarking platform",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

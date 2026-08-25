@@ -1,4 +1,4 @@
-# Scope: LLM Arena
+# Scope: Swag-flow
 
 Send one prompt, watch up to three AI models answer it at the same time, and vote for the best one. Over time those votes and the real per-call numbers, speed, tokens, cost, build an honest leaderboard of which model is actually worth using.
 
