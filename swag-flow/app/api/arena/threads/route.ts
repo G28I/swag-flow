@@ -47,7 +47,17 @@ export async function GET(req: NextRequest) {
           messages: {
             orderBy: { createdAt: "asc" },
           },
-          votes: true,
+          votes: {
+            select: {
+              id: true,
+              threadId: true,
+              promptId: true,
+              votedMessageId: true,
+              votedModel: true,
+              models: true,
+              createdAt: true,
+            },
+          },
         },
       });
 
@@ -57,8 +67,11 @@ export async function GET(req: NextRequest) {
 
       const isOwner = Boolean(userId && thread.userId === userId);
 
+      // Omit internal user identifier from payload for privacy
+      const { userId: _internalUserId, ...safeThread } = thread;
+
       return NextResponse.json({
-        ...thread,
+        ...safeThread,
         isOwner,
       });
     }
