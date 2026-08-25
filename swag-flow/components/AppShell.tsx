@@ -18,6 +18,7 @@ import {
   Trash2,
   LogIn,
   LogOut,
+  Search,
 } from "lucide-react";
 
 interface ThreadItem {
@@ -40,6 +41,11 @@ export default function AppShell({ children, breadcrumb = "Arena" }: AppShellPro
   const [isDarkMode, setIsDarkMode] = useState(true);
   const [threads, setThreads] = useState<ThreadItem[]>([]);
   const [isLoadingThreads, setIsLoadingThreads] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+
+  const filteredThreads = threads.filter((t) =>
+    t.title.toLowerCase().includes(searchQuery.toLowerCase())
+  );
 
   // Initialize theme from localStorage or document class
   useEffect(() => {
@@ -199,6 +205,23 @@ export default function AppShell({ children, breadcrumb = "Arena" }: AppShellPro
               <Plus size={16} />
             </button>
           </div>
+
+          {user && threads.length > 0 && (
+            <div className="relative mb-3 px-1">
+              <Search
+                size={13}
+                className="absolute left-3.5 top-2.5 text-muted-foreground/60 pointer-events-none"
+              />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Seek prompts & threads..."
+                className="w-full pl-8 pr-3 py-1.5 rounded-xl bg-background/60 border border-border-custom/60 text-xs font-medium focus:outline-none focus:border-accent/40 placeholder-muted-foreground/60 transition-colors"
+              />
+            </div>
+          )}
+
           <div className="flex-1 overflow-y-auto space-y-1 pr-1 scrollbar-thin">
             {!isLoaded ? (
               <div className="px-3 py-4 text-xs text-muted-foreground text-center">Loading…</div>
@@ -220,8 +243,12 @@ export default function AppShell({ children, breadcrumb = "Arena" }: AppShellPro
               <div className="px-3 py-4 text-xs text-muted-foreground text-center">
                 No threads yet. Click + to start one.
               </div>
+            ) : filteredThreads.length === 0 ? (
+              <div className="px-3 py-4 text-xs text-muted-foreground text-center italic">
+                No matching prompts found.
+              </div>
             ) : (
-              threads.map((thread) => (
+              filteredThreads.map((thread) => (
                 <Link
                   key={thread.id}
                   href={`/?thread=${thread.id}`}
