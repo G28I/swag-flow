@@ -129,6 +129,10 @@ function ArenaContent() {
   // Current active version index per turnId: turnId -> versionIndex
   const [activeVersionIndexMap, setActiveVersionIndexMap] = useState<Record<string, number>>({});
 
+  // Active streaming target turn & model slot tracking
+  const [streamingTurnId, setStreamingTurnId] = useState<string | null>(null);
+  const [streamingSlot, setStreamingSlot] = useState<"all" | "modelA" | "modelB" | "modelC">("all");
+
   // Initialize streams for up to 3 concurrent models
   const modelA = useModelStream();
   const modelB = useModelStream();
@@ -517,6 +521,8 @@ function ArenaContent() {
       const slice = prev.slice(0, targetTurnIndex);
       return [...slice, newTurn];
     });
+    setStreamingTurnId(turnId);
+    setStreamingSlot("all");
 
     try {
       const response = await fetch("/api/arena/prompt", {
@@ -557,6 +563,86 @@ function ArenaContent() {
 
     const targetTurn = versions[targetVersionIndex];
     setTurns((prev) => prev.map((t) => (t.id === turnId ? targetTurn : t)));
+  };
+
+  const handleRegenerateModel = async (turnId: string, slot: "modelA" | "modelB" | "modelC") => {
+    const turn = turns.find((t) => t.id === turnId);
+    if (!turn) return;
+
+    const modelIndex = slot === "modelA" ? 0 : slot === "modelB" ? 1 : 2;
+    const modelItem = turn.models[modelIndex];
+    if (!modelItem) return;
+
+    let targetThreadId = threadId;
+    let targetPromptId = turn.promptId;
+
+    if (!targetThreadId || !targetPromptId) {
+      try {
+        const res = await fetch("/api/arena/prompt", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ prompt: turn.prompt, threadId: targetThreadId }),
+        });
+        if (!res.ok) throw new Error("Failed to prepare prompt for regeneration.");
+        const data = await res.json();
+        targetThreadId = data.threadId;
+        targetPromptId = data.messageId;
+        setThreadId(targetThreadId);
+        setTurns((prev) =>
+          prev.map((t) => (t.id === turnId ? { ...t, promptId: targetPromptId } : t))
+        );
+      } catch (err) {
+        console.error("Regenerate setup error:", err);
+        setError("Failed to start regeneration. Please try again.");
+        return;
+      }
+    }
+
+    setStreamingTurnId(turnId);
+    setStreamingSlot(slot);
+
+    setTurns((prev) =>
+      prev.map((t) => {
+        if (t.id !== turnId) return t;
+        return {
+          ...t,
+          responses: {
+            ...t.responses,
+            [slot]: {
+              text: "",
+              error: null,
+              metrics: null,
+              isStreaming: true,
+              messageId: null,
+            },
+          },
+        };
+      })
+    );
+
+    const hook = slot === "modelA" ? modelA : slot === "modelB" ? modelB : modelC;
+    hook.reset();
+    await hook.startStream(targetThreadId || "", targetPromptId || "", modelItem.id);
+
+    setTurns((prev) =>
+      prev.map((t) => {
+        if (t.id !== turnId) return t;
+        return {
+          ...t,
+          responses: {
+            ...t.responses,
+            [slot]: {
+              text: hook.text,
+              error: hook.error,
+              metrics: hook.metrics,
+              isStreaming: false,
+              messageId: hook.messageId,
+            },
+          },
+        };
+      })
+    );
+    setStreamingTurnId(null);
   };
 
   const removeModel = (modelId: string) => {
@@ -655,6 +741,8 @@ function ArenaContent() {
     };
 
     setTurns((prev) => [...prev, initialTurn]);
+    setStreamingTurnId(turnId);
+    setStreamingSlot("all");
 
     try {
       // 1. Establish thread and user message in database
@@ -755,36 +843,45 @@ function ArenaContent() {
     modelC.abort();
   };
 
-  // Sync current active streaming hooks into the latest turn card in the feed
-  const activeTurns = turns.map((turn, index) => {
+  // Sync current active streaming hooks into target turn card in the feed
+  const activeTurns = turns.map((turn) => {
     if (
-      index === turns.length - 1 &&
+      turn.id === streamingTurnId &&
       (isStreamingAny || modelA.text || modelB.text || modelC.text)
     ) {
       return {
         ...turn,
         responses: {
-          modelA: {
-            text: modelA.text,
-            error: modelA.error,
-            metrics: modelA.metrics,
-            isStreaming: modelA.isStreaming,
-            messageId: modelA.messageId,
-          },
-          modelB: {
-            text: modelB.text,
-            error: modelB.error,
-            metrics: modelB.metrics,
-            isStreaming: modelB.isStreaming,
-            messageId: modelB.messageId,
-          },
-          modelC: {
-            text: modelC.text,
-            error: modelC.error,
-            metrics: modelC.metrics,
-            isStreaming: modelC.isStreaming,
-            messageId: modelC.messageId,
-          },
+          modelA:
+            streamingSlot === "all" || streamingSlot === "modelA"
+              ? {
+                  text: modelA.text,
+                  error: modelA.error,
+                  metrics: modelA.metrics,
+                  isStreaming: modelA.isStreaming,
+                  messageId: modelA.messageId,
+                }
+              : turn.responses.modelA,
+          modelB:
+            streamingSlot === "all" || streamingSlot === "modelB"
+              ? {
+                  text: modelB.text,
+                  error: modelB.error,
+                  metrics: modelB.metrics,
+                  isStreaming: modelB.isStreaming,
+                  messageId: modelB.messageId,
+                }
+              : turn.responses.modelB,
+          modelC:
+            streamingSlot === "all" || streamingSlot === "modelC"
+              ? {
+                  text: modelC.text,
+                  error: modelC.error,
+                  metrics: modelC.metrics,
+                  isStreaming: modelC.isStreaming,
+                  messageId: modelC.messageId,
+                }
+              : turn.responses.modelC,
         },
       };
     }
@@ -970,11 +1067,7 @@ function ArenaContent() {
                             isVoted={turn.winnerModel === "modelA"}
                             isOwner={isOwner}
                             onStop={() => modelA.abort()}
-                            onRegenerate={() => {
-                              if (threadId && turn.promptId && turn.models[0]) {
-                                modelA.startStream(threadId, turn.promptId, turn.models[0].id);
-                              }
-                            }}
+                            onRegenerate={() => handleRegenerateModel(turn.id, "modelA")}
                           />
                         )}
                         {turn.activeCount > 1 && (
@@ -987,11 +1080,7 @@ function ArenaContent() {
                             isVoted={turn.winnerModel === "modelB"}
                             isOwner={isOwner}
                             onStop={() => modelB.abort()}
-                            onRegenerate={() => {
-                              if (threadId && turn.promptId && turn.models[1]) {
-                                modelB.startStream(threadId, turn.promptId, turn.models[1].id);
-                              }
-                            }}
+                            onRegenerate={() => handleRegenerateModel(turn.id, "modelB")}
                           />
                         )}
                         {turn.activeCount > 2 && (
@@ -1004,11 +1093,7 @@ function ArenaContent() {
                             isVoted={turn.winnerModel === "modelC"}
                             isOwner={isOwner}
                             onStop={() => modelC.abort()}
-                            onRegenerate={() => {
-                              if (threadId && turn.promptId && turn.models[2]) {
-                                modelC.startStream(threadId, turn.promptId, turn.models[2].id);
-                              }
-                            }}
+                            onRegenerate={() => handleRegenerateModel(turn.id, "modelC")}
                           />
                         )}
                       </div>
