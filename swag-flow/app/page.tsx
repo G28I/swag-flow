@@ -628,7 +628,11 @@ function ArenaContent() {
 
     const hook = slot === "modelA" ? modelA : slot === "modelB" ? modelB : modelC;
     hook.reset();
-    await hook.startStream(targetThreadId || "", targetPromptId || "", modelItem.id);
+    const snapshot = await hook.startStream(
+      targetThreadId || "",
+      targetPromptId || "",
+      modelItem.id
+    );
 
     setTurns((prev) =>
       prev.map((t) => {
@@ -638,11 +642,11 @@ function ArenaContent() {
           responses: {
             ...t.responses,
             [slot]: {
-              text: hook.text,
-              error: hook.error,
-              metrics: hook.metrics,
+              text: snapshot.text || t.responses[slot].text,
+              error: snapshot.error,
+              metrics: snapshot.metrics,
               isStreaming: false,
-              messageId: hook.messageId,
+              messageId: snapshot.messageId || t.responses[slot].messageId,
             },
           },
         };

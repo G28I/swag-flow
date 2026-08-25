@@ -7,6 +7,13 @@ export interface StreamMetrics {
   tokenCount: number;
 }
 
+export interface StreamSnapshot {
+  text: string;
+  error: string | null;
+  metrics: StreamMetrics | null;
+  messageId: string | null;
+}
+
 export function useModelStream() {
   const [text, setText] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
@@ -75,7 +82,7 @@ export function useModelStream() {
   }, []);
 
   const startStream = useCallback(
-    async (threadId: string, parentId: string, model: string) => {
+    async (threadId: string, parentId: string, model: string): Promise<StreamSnapshot> => {
       // Abort previous stream if still running
       if (abortRef.current) {
         abortRef.current.abort();
@@ -93,6 +100,11 @@ export function useModelStream() {
       setMessageId(null);
       setIsStreaming(true);
 
+      let snapshotText = "";
+      let snapshotError: string | null = null;
+      let snapshotMetrics: StreamMetrics | null = null;
+      let snapshotMessageId: string | null = null;
+
       const controller = new AbortController();
       abortRef.current = controller;
 
@@ -102,7 +114,9 @@ export function useModelStream() {
         watchdogRef.id = setTimeout(() => {
           if (!controller.signal.aborted) {
             controller.abort();
-            setError("Model response timed out. Click 🔄 to retry.");
+            const timeoutMsg = "Model response timed out. Click 🔄 to retry.";
+            setError(timeoutMsg);
+            snapshotError = timeoutMsg;
             setIsStreaming(false);
           }
         }, 40000);
@@ -153,9 +167,11 @@ export function useModelStream() {
                 const event = JSON.parse(dataStr);
                 if (event.type === "meta") {
                   setMessageId(event.messageId);
+                  snapshotMessageId = event.messageId;
                 } else if (event.type === "token") {
-                  // Accumulate in buffer, schedule RAF flush
+                  // Accumulate in buffer and snapshot, schedule RAF flush
                   textBufferRef.current += event.text;
+                  snapshotText += event.text;
                   scheduleFlush();
                 } else if (event.type === "done") {
                   if (watchdogRef.id) clearTimeout(watchdogRef.id);
@@ -169,14 +185,17 @@ export function useModelStream() {
                     cancelAnimationFrame(rafIdRef.current);
                     rafIdRef.current = null;
                   }
-                  setMetrics({
+                  const finalM = {
                     latency: event.latency,
                     ttft: event.ttft,
                     tokensPerSec: event.tokensPerSec,
                     tokenCount: event.tokenCount,
-                  });
+                  };
+                  setMetrics(finalM);
+                  snapshotMetrics = finalM;
                 } else if (event.type === "error") {
                   setError(event.message);
+                  snapshotError = event.message;
                 }
               } catch {
                 // Ignore partial JSON lines
@@ -187,14 +206,21 @@ export function useModelStream() {
       } catch (err: unknown) {
         // Don't treat abort as an error
         if (err instanceof DOMException && err.name === "AbortError") {
-          // Stream was intentionally cancelled — not an error
-          return;
+          // Stream was intentionally cancelled
+          return {
+            text: snapshotText,
+            error: null,
+            metrics: snapshotMetrics,
+            messageId: snapshotMessageId,
+          };
         }
         console.error(`Stream error for model ${model}:`, err);
-        setError(
-          err instanceof Error ? err.message : "A streaming error occurred. Please try again."
-        );
+        const errMsg =
+          err instanceof Error ? err.message : "A streaming error occurred. Please try again.";
+        setError(errMsg);
+        snapshotError = errMsg;
       } finally {
+        if (watchdogRef.id) clearTimeout(watchdogRef.id);
         // Final flush of any remaining buffered text
         if (textBufferRef.current) {
           const remaining = textBufferRef.current;
@@ -210,6 +236,13 @@ export function useModelStream() {
           abortRef.current = null;
         }
       }
+
+      return {
+        text: snapshotText,
+        error: snapshotError,
+        metrics: snapshotMetrics,
+        messageId: snapshotMessageId,
+      };
     },
     [scheduleFlush]
   );
