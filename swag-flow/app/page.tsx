@@ -24,6 +24,7 @@ import {
   Pencil,
   ChevronLeft,
   ChevronRight,
+  ThumbsUp,
 } from "lucide-react";
 
 interface StreamMetrics {
@@ -1414,12 +1415,16 @@ function ModelResponseCard({
               <button
                 onClick={onVote}
                 disabled={hasVoteCast || isStreaming || !text}
-                className={`px-3 py-1.5 rounded-lg border text-[10px] font-bold transition-all duration-150 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${
+                className={`px-3 py-1.5 rounded-lg border text-[10px] font-bold flex items-center gap-1.5 transition-all duration-150 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${
                   hasVoteCast
                     ? "border-border-custom text-muted-foreground"
-                    : "border-accent bg-accent/10 text-accent hover:bg-accent hover:text-white"
+                    : "border-accent bg-accent/10 text-accent hover:bg-accent hover:text-white shadow-sm"
                 }`}
-              ></button>
+                title="Vote this response as winner"
+              >
+                <ThumbsUp size={11} />
+                <span>Vote Better</span>
+              </button>
             </div>
           ) : null}
         </div>
