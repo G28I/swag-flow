@@ -81,6 +81,18 @@ export function useModelStream() {
         abortRef.current.abort();
       }
 
+      // Reset state and set isStreaming=true for the new stream
+      if (rafIdRef.current !== null) {
+        cancelAnimationFrame(rafIdRef.current);
+        rafIdRef.current = null;
+      }
+      textBufferRef.current = "";
+      setText("");
+      setError(null);
+      setMetrics(null);
+      setMessageId(null);
+      setIsStreaming(true);
+
       const controller = new AbortController();
       abortRef.current = controller;
 
