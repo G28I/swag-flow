@@ -39,10 +39,15 @@ export async function GET() {
 
     const rawModels: OpenRouterModel[] = json.data;
 
-    // Filter for free models (pricing.prompt is "0")
-    // Map to normalized properties and sort by context window descending
+    // Filter for free models, excluding restricted agentic-harness-only models (e.g. thinkingmachines/*)
     const freeModels = rawModels
-      .filter((m) => m.pricing && m.pricing.prompt === "0")
+      .filter(
+        (m) =>
+          m.pricing &&
+          (m.pricing.prompt === "0" || parseFloat(m.pricing.prompt) === 0) &&
+          !m.id.startsWith("thinkingmachines/") &&
+          !m.id.includes("harness")
+      )
       .map((m) => ({
         id: m.id,
         name: m.name || m.id.split("/")[1] || m.id,
@@ -66,21 +71,21 @@ export async function GET() {
     // Resilient fallback list in case OpenRouter is offline or rate-limiting
     const fallbacks = [
       {
-        id: "google/gemma-4-31b-it:free",
-        name: "Google Gemma 4 31B (Free)",
+        id: "google/gemini-2.0-flash-exp:free",
+        name: "Google Gemini 2.0 Flash (Free)",
+        context_length: 1048576,
+        pricing: { prompt: "0", completion: "0" },
+      },
+      {
+        id: "meta-llama/llama-3.3-70b-instruct:free",
+        name: "Meta Llama 3.3 70B (Free)",
+        context_length: 131072,
+        pricing: { prompt: "0", completion: "0" },
+      },
+      {
+        id: "qwen/qwen-2.5-coder-32b-instruct:free",
+        name: "Qwen 2.5 Coder 32B (Free)",
         context_length: 32768,
-        pricing: { prompt: "0", completion: "0" },
-      },
-      {
-        id: "nvidia/nemotron-3.5-lightning:free",
-        name: "NVIDIA Nemotron 3.5 Lightning (Free)",
-        context_length: 8192,
-        pricing: { prompt: "0", completion: "0" },
-      },
-      {
-        id: "poolside/laguna-s-2.1:free",
-        name: "Poolside Laguna S 2.1 (Free)",
-        context_length: 16384,
         pricing: { prompt: "0", completion: "0" },
       },
     ].sort((a, b) => b.context_length - a.context_length);
