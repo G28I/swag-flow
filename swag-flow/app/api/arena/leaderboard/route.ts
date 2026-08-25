@@ -37,15 +37,18 @@ export async function GET(req: NextRequest) {
       userId = "mock_user_123";
     }
 
-    if (!userId) {
-      return NextResponse.json({ error: "Unauthorized. Please sign in." }, { status: 401 });
-    }
-
     const { searchParams } = new URL(req.url);
     const scope = searchParams.get("scope") || "global"; // "global" | "personal"
 
+    if (scope === "personal" && !userId) {
+      return NextResponse.json(
+        { error: "Unauthorized. Please sign in to view your personal leaderboard." },
+        { status: 401 }
+      );
+    }
+
     // 3. Fetch votes based on scope
-    const voteWhere = scope === "personal" ? { userId } : {};
+    const voteWhere = scope === "personal" && userId ? { userId } : {};
     const votes = await prisma.vote.findMany({
       where: voteWhere,
       select: {
@@ -58,7 +61,7 @@ export async function GET(req: NextRequest) {
 
     // 4. Fetch performance metrics from completed assistant messages
     const messageWhere =
-      scope === "personal"
+      scope === "personal" && userId
         ? {
             role: "assistant",
             model: { not: null },
