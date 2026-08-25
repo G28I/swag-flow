@@ -552,7 +552,9 @@ function ArenaContent() {
 
       activeModels.forEach((model, idx) => {
         const hook = idx === 0 ? modelA : idx === 1 ? modelB : modelC;
-        hook.startStream(currentThreadId, parentId, model.id);
+        hook.startStream(currentThreadId, parentId, model.id).catch((err) => {
+          console.error(`Edit stream start error for model ${model.id}:`, err);
+        });
       });
     } catch (err: unknown) {
       console.error("Edit submission error:", err);
@@ -802,7 +804,9 @@ function ArenaContent() {
       // 2. Fire OpenRouter streaming connections concurrently
       activeModels.forEach((model, idx) => {
         const hook = idx === 0 ? modelA : idx === 1 ? modelB : modelC;
-        hook.startStream(currentThreadId, parentId, model.id);
+        hook.startStream(currentThreadId, parentId, model.id).catch((err) => {
+          console.error(`Stream start error for model ${model.id}:`, err);
+        });
       });
     } catch (err: unknown) {
       console.error("Submission error:", err);
