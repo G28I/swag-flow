@@ -133,7 +133,14 @@ export async function POST(req: NextRequest) {
 
           if (!response.ok) {
             const errText = await response.text();
-            throw new Error(`OpenRouter returned status ${response.status}: ${errText}`);
+            let detail = errText;
+            try {
+              const parsedErr = JSON.parse(errText);
+              detail = parsedErr.error?.message || parsedErr.message || errText;
+            } catch {
+              // Use raw text fallback
+            }
+            throw new Error(`OpenRouter (${response.status}): ${detail}`);
           }
 
           const reader = response.body?.getReader();
@@ -165,6 +172,10 @@ export async function POST(req: NextRequest) {
 
                   try {
                     const parsed = JSON.parse(dataStr);
+                    if (parsed.error) {
+                      const msg = parsed.error.message || "Model provider error";
+                      throw new Error(`OpenRouter: ${msg}`);
+                    }
                     const content = parsed.choices?.[0]?.delta?.content;
 
                     if (content) {
@@ -322,13 +333,13 @@ export async function POST(req: NextRequest) {
             error: errorMessage,
           }).catch(() => {});
 
-          // Inform client of the error if controller is open
+          // Inform client of the precise error if controller is open
           try {
             controller.enqueue(
               encoder.encode(
                 `data: ${JSON.stringify({
                   type: "error",
-                  message: "An error occurred while calling the model. Please try again.",
+                  message: errorMessage,
                 })}\n\n`
               )
             );
