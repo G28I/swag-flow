@@ -166,35 +166,42 @@ export function useModelStream() {
               try {
                 const event = JSON.parse(dataStr);
                 if (event.type === "meta") {
-                  setMessageId(event.messageId);
+                  if (abortRef.current === controller) {
+                    setMessageId(event.messageId);
+                  }
                   snapshotMessageId = event.messageId;
                 } else if (event.type === "token") {
-                  // Accumulate in buffer and snapshot, schedule RAF flush
-                  textBufferRef.current += event.text;
+                  // Accumulate in buffer and snapshot, schedule RAF flush if active controller
+                  if (abortRef.current === controller) {
+                    textBufferRef.current += event.text;
+                    scheduleFlush();
+                  }
                   snapshotText += event.text;
-                  scheduleFlush();
                 } else if (event.type === "done") {
                   if (watchdogRef.id) clearTimeout(watchdogRef.id);
-                  // Flush any remaining text immediately before setting metrics
-                  if (textBufferRef.current) {
-                    const remaining = textBufferRef.current;
-                    textBufferRef.current = "";
-                    setText((prev) => prev + remaining);
-                  }
-                  if (rafIdRef.current !== null) {
-                    cancelAnimationFrame(rafIdRef.current);
-                    rafIdRef.current = null;
-                  }
                   const finalM = {
                     latency: event.latency,
                     ttft: event.ttft,
                     tokensPerSec: event.tokensPerSec,
                     tokenCount: event.tokenCount,
                   };
-                  setMetrics(finalM);
                   snapshotMetrics = finalM;
+                  if (abortRef.current === controller) {
+                    if (textBufferRef.current) {
+                      const remaining = textBufferRef.current;
+                      textBufferRef.current = "";
+                      setText((prev) => prev + remaining);
+                    }
+                    if (rafIdRef.current !== null) {
+                      cancelAnimationFrame(rafIdRef.current);
+                      rafIdRef.current = null;
+                    }
+                    setMetrics(finalM);
+                  }
                 } else if (event.type === "error") {
-                  setError(event.message);
+                  if (abortRef.current === controller) {
+                    setError(event.message);
+                  }
                   snapshotError = event.message;
                 }
               } catch {
@@ -217,22 +224,25 @@ export function useModelStream() {
         console.error(`Stream error for model ${model}:`, err);
         const errMsg =
           err instanceof Error ? err.message : "A streaming error occurred. Please try again.";
-        setError(errMsg);
+        if (abortRef.current === controller) {
+          setError(errMsg);
+        }
         snapshotError = errMsg;
       } finally {
         if (watchdogRef.id) clearTimeout(watchdogRef.id);
-        // Final flush of any remaining buffered text
-        if (textBufferRef.current) {
-          const remaining = textBufferRef.current;
-          textBufferRef.current = "";
-          setText((prev) => prev + remaining);
-        }
-        if (rafIdRef.current !== null) {
-          cancelAnimationFrame(rafIdRef.current);
-          rafIdRef.current = null;
-        }
-        setIsStreaming(false);
-        if (abortRef.current === controller) {
+        // Only flush buffer, cancel RAF, and set isStreaming=false if THIS controller is still the active stream
+        const isCurrent = abortRef.current === controller;
+        if (isCurrent) {
+          if (textBufferRef.current) {
+            const remaining = textBufferRef.current;
+            textBufferRef.current = "";
+            setText((prev) => prev + remaining);
+          }
+          if (rafIdRef.current !== null) {
+            cancelAnimationFrame(rafIdRef.current);
+            rafIdRef.current = null;
+          }
+          setIsStreaming(false);
           abortRef.current = null;
         }
       }

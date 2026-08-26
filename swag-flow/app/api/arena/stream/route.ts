@@ -117,6 +117,22 @@ export async function POST(req: NextRequest) {
             )
           );
 
+          // Inactivity watchdog for OpenRouter connection:
+          // 15 seconds allowed for first byte or between streaming data chunks
+          const openRouterAbortController = new AbortController();
+          let inactivityTimeout: NodeJS.Timeout | null = null;
+
+          const resetInactivityTimeout = () => {
+            if (inactivityTimeout) clearTimeout(inactivityTimeout);
+            inactivityTimeout = setTimeout(() => {
+              openRouterAbortController.abort(
+                new Error("Stream connection timed out due to inactivity.")
+              );
+            }, 15000);
+          };
+
+          resetInactivityTimeout();
+
           // Fetch OpenRouter API stream without proxy buffering options for maximum response speed
           const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
             method: "POST",
@@ -131,10 +147,11 @@ export async function POST(req: NextRequest) {
               messages: messagesToStream,
               stream: true,
             }),
-            signal: AbortSignal.timeout(35000),
+            signal: openRouterAbortController.signal,
           });
 
           if (!response.ok) {
+            if (inactivityTimeout) clearTimeout(inactivityTimeout);
             const errText = await response.text();
             let detail = errText;
             try {
@@ -148,6 +165,7 @@ export async function POST(req: NextRequest) {
 
           const reader = response.body?.getReader();
           if (!reader) {
+            if (inactivityTimeout) clearTimeout(inactivityTimeout);
             throw new Error("No readable stream body returned from OpenRouter");
           }
 
@@ -160,6 +178,8 @@ export async function POST(req: NextRequest) {
             while (true) {
               const { done, value } = await reader.read();
               if (done) break;
+
+              resetInactivityTimeout(); // Reset 15s inactivity watchdog on each chunk
 
               buffer += decoder.decode(value, { stream: true });
               const lines = buffer.split("\n");
@@ -303,7 +323,7 @@ export async function POST(req: NextRequest) {
               err.name === "AbortError" ||
               err.message.toLowerCase().includes("timeout"));
           const errorMessage = isTimeout
-            ? "Model request timed out after 35 seconds. Click 🔄 to retry."
+            ? "Model connection timed out due to inactivity. Click 🔄 to retry."
             : err instanceof Error
               ? err.message
               : "Unknown error";
