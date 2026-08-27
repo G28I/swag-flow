@@ -19,14 +19,11 @@ export async function POST(req: NextRequest) {
       userId = authObj.userId;
     }
 
-    // In local development, if no active session exists, fallback to mock user
     if (!userId && process.env.NODE_ENV === "development") {
       userId = "mock_user_123";
     }
 
-    if (!userId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const effectiveUserId = userId || "anonymous";
 
     // 2. Parse input
     const body = await req.json();
@@ -38,7 +35,7 @@ export async function POST(req: NextRequest) {
 
     // 3. Arcjet Security Check (Shield, Bot Protection, and Prompt Injection)
     const decision = await promptAj.protect(req, {
-      userId,
+      userId: effectiveUserId,
       requested: 1,
       detectPromptInjectionMessage: prompt,
     });
@@ -67,20 +64,27 @@ export async function POST(req: NextRequest) {
       const thread = await prisma.thread.create({
         data: {
           title,
-          userId,
+          userId: effectiveUserId,
         },
       });
       targetThreadId = thread.id;
     } else {
-      // Verify thread exists and belongs to the user
-      const existingThread = await prisma.thread.findFirst({
-        where: {
-          id: targetThreadId,
-          userId,
-        },
+      // Verify thread exists and belongs to the user (or is an anonymous thread)
+      const existingThread = await prisma.thread.findUnique({
+        where: { id: targetThreadId },
       });
+
       if (!existingThread) {
         return NextResponse.json({ error: "Thread not found" }, { status: 404 });
+      }
+
+      const isAnonymousThread =
+        !existingThread.userId ||
+        existingThread.userId === "anonymous" ||
+        existingThread.userId === "mock_user_123";
+
+      if (!isAnonymousThread && existingThread.userId !== userId) {
+        return NextResponse.json({ error: "Unauthorized access to thread" }, { status: 403 });
       }
     }
 
@@ -94,7 +98,7 @@ export async function POST(req: NextRequest) {
     });
 
     // 6. Track event in Statsig (fire-and-forget for speed)
-    logStatsigEvent(userId, "prompt_created", {
+    logStatsigEvent(effectiveUserId, "prompt_created", {
       threadId: targetThreadId,
       messageId: userMessage.id,
     }).catch(() => {});
