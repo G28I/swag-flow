@@ -26,17 +26,7 @@ export async function POST(req: NextRequest) {
 
     const effectiveUserId = userId || "anonymous";
 
-    // 2. Clone request to read body for Arcjet validation (if required),
-    // then validate body parameters.
-    const body = await req.json();
-    const { threadId, parentId, model } = body;
-
-    if (!threadId || !parentId || !model) {
-      return NextResponse.json({ error: "Missing required parameters" }, { status: 400 });
-    }
-
-    // 3. Run Arcjet protection (rate limiting, bot detection, shield)
-    // We pass userId to track the token bucket limit per user across all models
+    // 2. Run Arcjet protection FIRST (rate limiting, bot detection, shield) before consuming body stream
     const decision = await aj.protect(req, { userId: effectiveUserId, requested: 1 });
     if (decision.isDenied()) {
       if (decision.reason.isRateLimit()) {
@@ -49,6 +39,14 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: "Automated access is not allowed." }, { status: 403 });
       }
       return NextResponse.json({ error: "Access denied." }, { status: 403 });
+    }
+
+    // 3. Parse request body
+    const body = await req.json();
+    const { threadId, parentId, model } = body;
+
+    if (!threadId || !parentId || !model) {
+      return NextResponse.json({ error: "Missing required parameters" }, { status: 400 });
     }
 
     // 4. Parallelize thread verification, parent lookup, and past messages fetch (READ only)

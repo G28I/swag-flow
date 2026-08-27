@@ -25,7 +25,8 @@ export async function POST(req: NextRequest) {
 
     const effectiveUserId = userId || "anonymous";
 
-    // 2. Parse input
+    // 2. Clone request to preserve stream for Arcjet validation, then parse body
+    const clonedReq = req.clone();
     const body = await req.json();
     const { prompt, threadId } = body;
 
@@ -34,7 +35,7 @@ export async function POST(req: NextRequest) {
     }
 
     // 3. Arcjet Security Check (Shield, Bot Protection, and Prompt Injection)
-    const decision = await promptAj.protect(req, {
+    const decision = await promptAj.protect(clonedReq, {
       userId: effectiveUserId,
       requested: 1,
       detectPromptInjectionMessage: prompt,

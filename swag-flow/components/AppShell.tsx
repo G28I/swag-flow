@@ -72,6 +72,25 @@ export default function AppShell({ children, breadcrumb = "Arena" }: AppShellPro
       if (user) {
         setIsLoadingThreads(true);
         try {
+          // Sync any local anonymous threads created prior to sign-in into the DB
+          const localAnon = localStorage.getItem("swag_flow_anon_threads");
+          if (localAnon) {
+            try {
+              const parsed: ThreadItem[] = JSON.parse(localAnon);
+              const threadIds = parsed.map((t) => t.id).filter(Boolean);
+              if (threadIds.length > 0) {
+                await fetch("/api/arena/threads/sync", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ threadIds }),
+                });
+              }
+              localStorage.removeItem("swag_flow_anon_threads");
+            } catch (syncErr) {
+              console.warn("Notice: Local thread migration skipped:", syncErr);
+            }
+          }
+
           const res = await fetch("/api/arena/threads");
           if (res.ok && !cancelled) {
             const data: ThreadItem[] = await res.json();
