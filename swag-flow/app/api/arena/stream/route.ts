@@ -193,14 +193,27 @@ export async function POST(req: NextRequest) {
                   const dataStr = cleanedLine.slice(6).trim();
                   if (dataStr === "[DONE]") continue;
 
+                  let parsed: Record<string, unknown> | null = null;
                   try {
-                    const parsed = JSON.parse(dataStr);
-                    if (parsed.error) {
-                      const msg = parsed.error.message || "Model provider error";
+                    parsed = JSON.parse(dataStr);
+                  } catch {
+                    // Ignore JSON parsing errors for incomplete lines split across chunk boundaries
+                    continue;
+                  }
+
+                  if (parsed && typeof parsed === "object") {
+                    const parsedObj = parsed as {
+                      error?: { message?: string };
+                      choices?: Array<{ delta?: { content?: string } }>;
+                      usage?: { completion_tokens?: number };
+                    };
+
+                    if (parsedObj.error) {
+                      const msg = parsedObj.error.message || "Model provider error";
                       throw new Error(`OpenRouter: ${msg}`);
                     }
-                    const content = parsed.choices?.[0]?.delta?.content;
 
+                    const content = parsedObj.choices?.[0]?.delta?.content;
                     if (content) {
                       if (isFirstToken) {
                         ttft = (performance.now() - startTime) / 1000;
@@ -229,11 +242,9 @@ export async function POST(req: NextRequest) {
                       }
                     }
 
-                    if (parsed.usage) {
-                      tokenCount = parsed.usage.completion_tokens;
+                    if (parsedObj.usage?.completion_tokens) {
+                      tokenCount = parsedObj.usage.completion_tokens;
                     }
-                  } catch {
-                    // Ignore JSON parsing errors for incomplete lines
                   }
                 }
               }
@@ -244,9 +255,25 @@ export async function POST(req: NextRequest) {
               const cleanedLine = buffer.trim();
               const dataStr = cleanedLine.slice(6).trim();
               if (dataStr !== "[DONE]") {
+                let parsed: Record<string, unknown> | null = null;
                 try {
-                  const parsed = JSON.parse(dataStr);
-                  const content = parsed.choices?.[0]?.delta?.content;
+                  parsed = JSON.parse(dataStr);
+                } catch {
+                  // Ignore
+                }
+                if (parsed && typeof parsed === "object") {
+                  const parsedObj = parsed as {
+                    error?: { message?: string };
+                    choices?: Array<{ delta?: { content?: string } }>;
+                    usage?: { completion_tokens?: number };
+                  };
+
+                  if (parsedObj.error) {
+                    const msg = parsedObj.error.message || "Model provider error";
+                    throw new Error(`OpenRouter: ${msg}`);
+                  }
+
+                  const content = parsedObj.choices?.[0]?.delta?.content;
                   if (content) {
                     completionText += content;
                     tokenCount += 1;
@@ -256,11 +283,9 @@ export async function POST(req: NextRequest) {
                       )
                     );
                   }
-                  if (parsed.usage) {
-                    tokenCount = parsed.usage.completion_tokens;
+                  if (parsedObj.usage?.completion_tokens) {
+                    tokenCount = parsedObj.usage.completion_tokens;
                   }
-                } catch {
-                  // Ignore
                 }
               }
             }
