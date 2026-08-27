@@ -156,11 +156,13 @@ function ArenaContent() {
 
     async function loadThreadHistory() {
       if (!threadParam) {
+        setPrompt("");
+        setError(null);
+        setTurns([]);
         setThreadId(null);
-        setThreadTitle("Swag-flow");
         setIsOwner(true);
         setIsNotFound(false);
-        setTurns([]);
+        setThreadTitle("Swag-flow");
         modelA.reset();
         modelB.reset();
         modelC.reset();
@@ -169,6 +171,7 @@ function ArenaContent() {
 
       // Optimistic restoration from localStorage for saved thread
       const targetKey = `arena_cache_${threadParam}`;
+
       try {
         const cached = localStorage.getItem(targetKey);
         if (cached) {
