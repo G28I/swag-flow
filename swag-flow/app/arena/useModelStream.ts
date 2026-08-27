@@ -12,6 +12,7 @@ export interface StreamSnapshot {
   error: string | null;
   metrics: StreamMetrics | null;
   messageId: string | null;
+  fallbackModel: string | null;
 }
 
 export function useModelStream() {
@@ -20,6 +21,7 @@ export function useModelStream() {
   const [error, setError] = useState<string | null>(null);
   const [metrics, setMetrics] = useState<StreamMetrics | null>(null);
   const [messageId, setMessageId] = useState<string | null>(null);
+  const [fallbackModel, setFallbackModel] = useState<string | null>(null);
 
   // RAF-batched text buffer — accumulates tokens between animation frames
   // so React only re-renders at ~60fps instead of 80–240+ times/sec
@@ -61,6 +63,7 @@ export function useModelStream() {
     setError(null);
     setMetrics(null);
     setMessageId(null);
+    setFallbackModel(null);
   }, []);
 
   const abort = useCallback(() => {
@@ -83,54 +86,50 @@ export function useModelStream() {
 
   const startStream = useCallback(
     async (threadId: string, parentId: string, model: string): Promise<StreamSnapshot> => {
-      // Abort previous stream if still running
-      if (abortRef.current) {
-        abortRef.current.abort();
-      }
+      // Clean up previous stream and state
+      reset();
 
-      // Reset state and set isStreaming=true for the new stream
-      if (rafIdRef.current !== null) {
-        cancelAnimationFrame(rafIdRef.current);
-        rafIdRef.current = null;
-      }
-      textBufferRef.current = "";
-      setText("");
+      const controller = new AbortController();
+      abortRef.current = controller;
+
+      setIsStreaming(true);
       setError(null);
       setMetrics(null);
       setMessageId(null);
-      setIsStreaming(true);
+      setFallbackModel(null);
 
       let snapshotText = "";
       let snapshotError: string | null = null;
       let snapshotMetrics: StreamMetrics | null = null;
       let snapshotMessageId: string | null = null;
+      let snapshotFallbackModel: string | null = null;
 
-      const controller = new AbortController();
-      abortRef.current = controller;
-
-      const watchdogRef = { id: null as NodeJS.Timeout | null };
+      // Sliding watchdog timer: aborts stream if no chunks arrive for 15s
+      const watchdogRef: { id: NodeJS.Timeout | null } = { id: null };
       const resetWatchdog = () => {
         if (watchdogRef.id) clearTimeout(watchdogRef.id);
         watchdogRef.id = setTimeout(() => {
-          if (!controller.signal.aborted) {
+          if (abortRef.current === controller) {
             controller.abort();
-            const timeoutMsg = "Model response timed out. Click 🔄 to retry.";
-            setError(timeoutMsg);
-            snapshotError = timeoutMsg;
+            setError("Stream connection timed out due to inactivity.");
             setIsStreaming(false);
           }
-        }, 40000);
+        }, 15000);
       };
 
-      resetWatchdog();
-
       try {
+        resetWatchdog();
+
         const response = await fetch("/api/arena/stream", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
           },
-          body: JSON.stringify({ threadId, parentId, model }),
+          body: JSON.stringify({
+            threadId,
+            parentId,
+            model,
+          }),
           signal: controller.signal,
         });
 
@@ -141,7 +140,7 @@ export function useModelStream() {
 
         const reader = response.body?.getReader();
         if (!reader) {
-          throw new Error("Streaming is not supported by the response server.");
+          throw new Error("No readable stream body returned");
         }
 
         const decoder = new TextDecoder();
@@ -170,6 +169,11 @@ export function useModelStream() {
                     setMessageId(event.messageId);
                   }
                   snapshotMessageId = event.messageId;
+                } else if (event.type === "fallback") {
+                  if (abortRef.current === controller) {
+                    setFallbackModel(event.fallbackModel);
+                  }
+                  snapshotFallbackModel = event.fallbackModel;
                 } else if (event.type === "token") {
                   // Accumulate in buffer and snapshot, schedule RAF flush if active controller
                   if (abortRef.current === controller) {
@@ -197,31 +201,23 @@ export function useModelStream() {
                       rafIdRef.current = null;
                     }
                     setMetrics(finalM);
+                    setIsStreaming(false);
                   }
                 } else if (event.type === "error") {
+                  if (watchdogRef.id) clearTimeout(watchdogRef.id);
+                  snapshotError = event.message || "Model provider error";
                   if (abortRef.current === controller) {
-                    setError(event.message);
+                    setError(snapshotError);
+                    setIsStreaming(false);
                   }
-                  snapshotError = event.message;
                 }
               } catch {
-                // Ignore partial JSON lines
+                // Ignore JSON parsing errors for incomplete SSE chunks
               }
             }
           }
         }
       } catch (err: unknown) {
-        // Don't treat abort as an error
-        if (err instanceof DOMException && err.name === "AbortError") {
-          // Stream was intentionally cancelled
-          return {
-            text: snapshotText,
-            error: null,
-            metrics: snapshotMetrics,
-            messageId: snapshotMessageId,
-          };
-        }
-        console.error(`Stream error for model ${model}:`, err);
         const errMsg =
           err instanceof Error ? err.message : "A streaming error occurred. Please try again.";
         if (abortRef.current === controller) {
@@ -252,6 +248,7 @@ export function useModelStream() {
         error: snapshotError,
         metrics: snapshotMetrics,
         messageId: snapshotMessageId,
+        fallbackModel: snapshotFallbackModel,
       };
     },
     [scheduleFlush]
@@ -263,6 +260,7 @@ export function useModelStream() {
     error,
     metrics,
     messageId,
+    fallbackModel,
     startStream,
     reset,
     abort,

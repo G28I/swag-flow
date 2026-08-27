@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, Suspense } from "react";
+import { useState, useEffect, useRef, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -25,6 +25,7 @@ import {
   ChevronLeft,
   ChevronRight,
   ThumbsUp,
+  Copy,
 } from "lucide-react";
 
 interface StreamMetrics {
@@ -1387,6 +1388,37 @@ interface ModelResponseCardProps {
   onRegenerate?: () => void;
 }
 
+function CodeBlock({ code, language }: { code: string; language: string }) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = () => {
+    if (typeof window !== "undefined") {
+      navigator.clipboard.writeText(code);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
+
+  return (
+    <div className="relative my-3 rounded-xl border border-border-custom/80 overflow-hidden bg-[#0d1117] shadow-md">
+      <div className="flex items-center justify-between px-3.5 py-1.5 bg-muted/30 border-b border-border-custom/60 text-[11px] font-mono text-muted-foreground">
+        <span className="font-semibold text-accent/90 uppercase tracking-wider">{language || "code"}</span>
+        <button
+          type="button"
+          onClick={handleCopy}
+          className="flex items-center gap-1.5 text-[11px] font-semibold px-2 py-0.5 rounded hover:bg-muted/50 text-foreground/80 hover:text-foreground transition-colors cursor-pointer"
+        >
+          {copied ? <Check size={12} className="text-green-400" /> : <Copy size={12} />}
+          <span>{copied ? "Copied!" : "Copy"}</span>
+        </button>
+      </div>
+      <pre className="p-3 text-[11px] font-mono text-foreground/90 overflow-x-auto whitespace-pre leading-relaxed">
+        <code>{code}</code>
+      </pre>
+    </div>
+  );
+}
+
 function ModelResponseCard({
   modelName,
   modelShort,
@@ -1400,8 +1432,16 @@ function ModelResponseCard({
 }: ModelResponseCardProps) {
   const { text, isStreaming, error, metrics } = state;
   const [showMetrics, setShowMetrics] = useState(false);
+  const cardBodyRef = useRef<HTMLDivElement>(null);
 
   const hasVoteCast = winnerModel !== null;
+
+  // Auto-scroll response viewport to bottom during active streaming
+  useEffect(() => {
+    if (isStreaming && cardBodyRef.current) {
+      cardBodyRef.current.scrollTop = cardBodyRef.current.scrollHeight;
+    }
+  }, [text, isStreaming]);
 
   return (
     <div className="flex flex-col h-[440px] rounded-2xl border border-border-custom bg-card-bg shadow-md overflow-hidden relative group">
@@ -1472,7 +1512,10 @@ function ModelResponseCard({
       </div>
 
       {/* Card Content */}
-      <div className="flex-1 p-5 text-xs sm:text-sm overflow-y-auto leading-relaxed font-normal">
+      <div
+        ref={cardBodyRef}
+        className="flex-1 p-5 text-xs sm:text-sm overflow-y-auto leading-relaxed font-normal scroll-smooth"
+      >
         {error ? (
           <div className="text-red-400 bg-red-950/20 border border-red-900/30 p-4 rounded-xl text-xs font-semibold">
             {error}
@@ -1520,6 +1563,10 @@ function ModelResponseCard({
                   ...props
                 }: React.HTMLAttributes<HTMLElement> & { className?: string }) => {
                   const isInline = !className?.includes("language-");
+                  const match = /language-(\w+)/.exec(className || "");
+                  const language = match ? match[1] : "";
+                  const codeString = String(children).replace(/\n$/, "");
+
                   return isInline ? (
                     <code
                       className="px-1.5 py-0.5 rounded bg-muted/60 text-[11px] font-mono text-accent font-semibold"
@@ -1528,12 +1575,7 @@ function ModelResponseCard({
                       {children}
                     </code>
                   ) : (
-                    <code
-                      className="block p-3 my-2 rounded-xl bg-background/90 border border-border-custom/60 text-[11px] font-mono text-foreground/90 overflow-x-auto whitespace-pre leading-normal"
-                      {...props}
-                    >
-                      {children}
-                    </code>
+                    <CodeBlock code={codeString} language={language} />
                   );
                 },
                 blockquote: ({ ...props }) => (

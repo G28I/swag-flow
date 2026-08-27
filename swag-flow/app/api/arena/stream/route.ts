@@ -137,32 +137,54 @@ export async function POST(req: NextRequest) {
 
           resetInactivityTimeout();
 
-          // Fetch OpenRouter API stream without proxy buffering options for maximum response speed
-          let response: Response | null = null;
-          let attempts = 0;
-          while (attempts < 3) {
-            attempts++;
-            response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-              method: "POST",
-              headers: {
-                Authorization: `Bearer ${env.OPENROUTER_API_KEY}`,
-                "Content-Type": "application/json",
-                "HTTP-Referer": "http://localhost:3000",
-                "X-Title": "Swag-flow",
-              },
-              body: JSON.stringify({
-                model,
-                messages: messagesToStream,
-                stream: true,
-              }),
-              signal: openRouterAbortController.signal,
-            });
+          // Fallback cascade models if primary model is rate-limited or unavailable
+          const FALLBACK_CASCADE = [
+            "google/gemini-2.0-flash-exp:free",
+            "meta-llama/llama-3.3-70b-instruct:free",
+            "qwen/qwen-2.5-coder-32b-instruct:free",
+            "nvidia/nemotron-3.5-lightning:free",
+            "minimax/minimax-m3:free",
+          ];
 
-            if (response.status === 429 && attempts < 3) {
-              await new Promise((res) => setTimeout(res, 400));
-              continue;
+          let activeModel = model;
+          let response: Response | null = null;
+          let modelsToTry = [model, ...FALLBACK_CASCADE.filter((m) => m !== model)];
+
+          for (const currentTryModel of modelsToTry) {
+            let attempts = 0;
+            while (attempts < 2) {
+              attempts++;
+              try {
+                response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+                  method: "POST",
+                  headers: {
+                    Authorization: `Bearer ${env.OPENROUTER_API_KEY}`,
+                    "Content-Type": "application/json",
+                    "HTTP-Referer": "http://localhost:3000",
+                    "X-Title": "Swag-flow",
+                  },
+                  body: JSON.stringify({
+                    model: currentTryModel,
+                    messages: messagesToStream,
+                    stream: true,
+                  }),
+                  signal: openRouterAbortController.signal,
+                });
+
+                if (response.status === 429 && attempts < 2) {
+                  await new Promise((res) => setTimeout(res, 300));
+                  continue;
+                }
+              } catch (fetchErr) {
+                console.warn(`Fetch error for ${currentTryModel}:`, fetchErr);
+              }
+              break;
             }
-            break;
+
+            if (response && response.ok) {
+              activeModel = currentTryModel;
+              break;
+            }
           }
 
           if (!response || !response.ok) {
@@ -176,6 +198,26 @@ export async function POST(req: NextRequest) {
               // Use raw text fallback
             }
             throw new Error(`OpenRouter (${response ? response.status : 500}): ${detail}`);
+          }
+
+          // If a fallback model was selected, notify database and client UI
+          if (activeModel !== model) {
+            prisma.message
+              .update({
+                where: { id: assistantMessage.id },
+                data: { model: activeModel },
+              })
+              .catch(() => {});
+
+            controller.enqueue(
+              encoder.encode(
+                `data: ${JSON.stringify({
+                  type: "fallback",
+                  originalModel: model,
+                  fallbackModel: activeModel,
+                })}\n\n`
+              )
+            );
           }
 
           const reader = response.body?.getReader();
