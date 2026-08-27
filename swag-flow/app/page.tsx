@@ -1388,6 +1388,24 @@ interface ModelResponseCardProps {
   onRegenerate?: () => void;
 }
 
+function formatMarkdownText(rawText: string): string {
+  if (!rawText) return "";
+  return rawText
+    .replace(/\$\\mathcal\{O\}\(([^$]+)\)\$/g, "`O($1)`")
+    .replace(/\$O\(([^$]+)\)\$/g, "`O($1)`")
+    .replace(/\$([^$\n]+)\$/g, (match, expr) => {
+      const cleanExpr = expr
+        .replace(/\\mathcal\{O\}/g, "O")
+        .replace(/\\log/g, "log")
+        .replace(/\\le/g, "≤")
+        .replace(/\\ge/g, "≥")
+        .replace(/\\ne/g, "≠")
+        .replace(/\\times/g, "×")
+        .replace(/\\cdot/g, "·");
+      return `\`${cleanExpr.trim()}\``;
+    });
+}
+
 function CodeBlock({ code, language }: { code: string; language: string }) {
   const [copied, setCopied] = useState(false);
 
@@ -1600,7 +1618,7 @@ function ModelResponseCard({
                 ),
               }}
             >
-              {text}
+              {formatMarkdownText(text)}
             </ReactMarkdown>
           </div>
         ) : isStreaming ? (
