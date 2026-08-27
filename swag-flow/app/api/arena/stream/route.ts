@@ -138,25 +138,36 @@ export async function POST(req: NextRequest) {
           resetInactivityTimeout();
 
           // Fetch OpenRouter API stream without proxy buffering options for maximum response speed
-          const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-            method: "POST",
-            headers: {
-              Authorization: `Bearer ${env.OPENROUTER_API_KEY}`,
-              "Content-Type": "application/json",
-              "HTTP-Referer": "http://localhost:3000",
-              "X-Title": "Swag-flow",
-            },
-            body: JSON.stringify({
-              model,
-              messages: messagesToStream,
-              stream: true,
-            }),
-            signal: openRouterAbortController.signal,
-          });
+          let response: Response | null = null;
+          let attempts = 0;
+          while (attempts < 3) {
+            attempts++;
+            response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+              method: "POST",
+              headers: {
+                Authorization: `Bearer ${env.OPENROUTER_API_KEY}`,
+                "Content-Type": "application/json",
+                "HTTP-Referer": "http://localhost:3000",
+                "X-Title": "Swag-flow",
+              },
+              body: JSON.stringify({
+                model,
+                messages: messagesToStream,
+                stream: true,
+              }),
+              signal: openRouterAbortController.signal,
+            });
 
-          if (!response.ok) {
+            if (response.status === 429 && attempts < 3) {
+              await new Promise((res) => setTimeout(res, 400));
+              continue;
+            }
+            break;
+          }
+
+          if (!response || !response.ok) {
             if (inactivityTimeout) clearTimeout(inactivityTimeout);
-            const errText = await response.text();
+            const errText = response ? await response.text() : "No response";
             let detail = errText;
             try {
               const parsedErr = JSON.parse(errText);
@@ -164,7 +175,7 @@ export async function POST(req: NextRequest) {
             } catch {
               // Use raw text fallback
             }
-            throw new Error(`OpenRouter (${response.status}): ${detail}`);
+            throw new Error(`OpenRouter (${response ? response.status : 500}): ${detail}`);
           }
 
           const reader = response.body?.getReader();
