@@ -374,10 +374,22 @@ function ArenaContent() {
     loadModels();
   }, []);
 
+  const trackClientEvent = (
+    eventName: string,
+    metadata?: Record<string, string | number | boolean | null | undefined>
+  ) => {
+    fetch("/api/arena/telemetry", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ eventName, metadata }),
+    }).catch(() => {});
+  };
+
   const handleShare = () => {
     if (typeof window !== "undefined") {
       navigator.clipboard.writeText(window.location.href);
       setCopied(true);
+      trackClientEvent("thread_shared", { threadId, turnCount: turns.length });
       setTimeout(() => setCopied(false), 2000);
     }
   };
@@ -576,6 +588,7 @@ function ArenaContent() {
     if (!versions || targetVersionIndex < 0 || targetVersionIndex >= versions.length) return;
 
     setActiveVersionIndexMap((prev) => ({ ...prev, [turnId]: targetVersionIndex }));
+    trackClientEvent("turn_version_switched", { turnId, versionIndex: targetVersionIndex });
 
     const targetTurn = versions[targetVersionIndex];
     setTurns((prev) => prev.map((t) => (t.id === turnId ? targetTurn : t)));
@@ -588,6 +601,8 @@ function ArenaContent() {
     const modelIndex = slot === "modelA" ? 0 : slot === "modelB" ? 1 : 2;
     const modelItem = turn.models[modelIndex];
     if (!modelItem) return;
+
+    trackClientEvent("regenerate_clicked", { turnId, slot, modelId: modelItem.id });
 
     let targetThreadId = threadId;
     let targetPromptId = turn.promptId;
@@ -666,12 +681,14 @@ function ArenaContent() {
   };
 
   const removeModel = (modelId: string) => {
+    trackClientEvent("model_removed", { modelId });
     setActiveModels((prev) => prev.filter((m) => m.id !== modelId));
   };
 
   const addModel = (model: ModelItem) => {
     if (activeModels.length >= 3) return;
     if (activeModels.some((m) => m.id === model.id)) return;
+    trackClientEvent("model_added", { modelId: model.id });
     setActiveModels((prev) => [...prev, model]);
   };
 
