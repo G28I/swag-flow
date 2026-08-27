@@ -65,7 +65,8 @@ export async function GET(req: NextRequest) {
         return NextResponse.json({ error: "Thread not found" }, { status: 404 });
       }
 
-      const isOwner = Boolean(userId && thread.userId === userId);
+      const isAnonymousThread = !thread.userId || thread.userId === "anonymous" || thread.userId === "mock_user_123";
+      const isOwner = isAnonymousThread ? true : Boolean(userId && thread.userId === userId);
 
       // Omit internal user identifier from payload for privacy
       const { userId: _internalUserId, ...safeThread } = thread;

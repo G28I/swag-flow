@@ -3,6 +3,7 @@ import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
 // Define which routes are public
 const isPublicRoute = createRouteMatcher([
   "/",
+  "/leaderboard",
   "/models",
   "/sign-in(.*)",
   "/sign-up(.*)",
@@ -12,6 +13,9 @@ const isPublicRoute = createRouteMatcher([
   "/api/arena/models",
   "/api/arena/vote",
   "/api/arena/threads(.*)",
+  "/api/arena/leaderboard",
+  "/api/arena/config",
+  "/api/arena/telemetry",
 ]);
 
 export default clerkMiddleware(async (auth, req) => {
