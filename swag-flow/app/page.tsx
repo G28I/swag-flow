@@ -823,6 +823,16 @@ function ArenaContent() {
       setThreadId(currentThreadId);
       if (typeof window !== "undefined") {
         window.history.replaceState(null, "", `/?thread=${currentThreadId}`);
+        try {
+          const existing = JSON.parse(localStorage.getItem("swag_flow_anon_threads") || "[]");
+          const title = userPrompt.length > 35 ? userPrompt.substring(0, 35) + "..." : userPrompt;
+          const updated = [
+            { id: currentThreadId, title, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+            ...existing.filter((t: { id: string }) => t.id !== currentThreadId),
+          ].slice(0, 30);
+          localStorage.setItem("swag_flow_anon_threads", JSON.stringify(updated));
+          window.dispatchEvent(new Event("swag_flow_threads_updated"));
+        } catch {}
       }
 
       // Update promptId in active turn history

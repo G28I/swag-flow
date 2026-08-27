@@ -65,27 +65,52 @@ export default function AppShell({ children, breadcrumb = "Arena" }: AppShellPro
     });
   }, []);
 
-  // Fetch threads from API when user is authenticated
+  // Fetch threads from API when user is authenticated, or load from localStorage for anonymous users
   useEffect(() => {
-    if (!isLoaded || !user) return;
     let cancelled = false;
-    async function fetchThreads() {
-      setIsLoadingThreads(true);
-      try {
-        const res = await fetch("/api/arena/threads");
-        if (res.ok && !cancelled) {
-          const data: ThreadItem[] = await res.json();
-          setThreads(data);
+    async function loadThreads() {
+      if (user) {
+        setIsLoadingThreads(true);
+        try {
+          const res = await fetch("/api/arena/threads");
+          if (res.ok && !cancelled) {
+            const data: ThreadItem[] = await res.json();
+            setThreads(data);
+          }
+        } catch (err) {
+          console.error("Failed to load threads:", err);
+        } finally {
+          if (!cancelled) setIsLoadingThreads(false);
         }
-      } catch (err) {
-        console.error("Failed to load threads:", err);
-      } finally {
-        if (!cancelled) setIsLoadingThreads(false);
+      } else {
+        try {
+          const local = localStorage.getItem("swag_flow_anon_threads");
+          if (local) setThreads(JSON.parse(local));
+          else setThreads([]);
+        } catch {
+          setThreads([]);
+        }
       }
     }
-    fetchThreads();
+
+    loadThreads();
+
+    const handleUpdate = () => {
+      if (!user) {
+        try {
+          const local = localStorage.getItem("swag_flow_anon_threads");
+          if (local) setThreads(JSON.parse(local));
+        } catch {}
+      }
+    };
+
+    window.addEventListener("swag_flow_threads_updated", handleUpdate);
+    window.addEventListener("storage", handleUpdate);
+
     return () => {
       cancelled = true;
+      window.removeEventListener("swag_flow_threads_updated", handleUpdate);
+      window.removeEventListener("storage", handleUpdate);
     };
   }, [isLoaded, user]);
 
@@ -102,38 +127,43 @@ export default function AppShell({ children, breadcrumb = "Arena" }: AppShellPro
     }
   };
 
-  const handleNewThread = async () => {
-    if (!user) {
-      router.push("/sign-in");
-      return;
-    }
-    try {
-      const res = await fetch("/api/arena/threads", { method: "POST" });
-      if (res.ok) {
-        const thread = await res.json();
-        setThreads((prev) => [thread, ...prev]);
-        router.push(`/?thread=${thread.id}`);
-      }
-    } catch (err) {
-      console.error("Failed to create thread:", err);
+  const handleNewThread = () => {
+    if (typeof window !== "undefined") {
+      window.location.href = "/";
+    } else {
+      router.push("/");
     }
   };
 
   const handleDeleteThread = async (e: React.MouseEvent, threadId: string) => {
     e.preventDefault();
     e.stopPropagation();
-    try {
-      const res = await fetch(`/api/arena/threads?id=${threadId}`, { method: "DELETE" });
-      if (res.ok) {
-        setThreads((prev) => prev.filter((t) => t.id !== threadId));
-        // If we're on the deleted thread, navigate home
-        const params = new URLSearchParams(window.location.search);
-        if (params.get("thread") === threadId) {
-          router.push("/");
-        }
+
+    setThreads((prev) => prev.filter((t) => t.id !== threadId));
+
+    if (user) {
+      try {
+        await fetch(`/api/arena/threads?id=${threadId}`, { method: "DELETE" });
+      } catch (err) {
+        console.error("Failed to delete thread:", err);
       }
-    } catch (err) {
-      console.error("Failed to delete thread:", err);
+    } else {
+      try {
+        const local = localStorage.getItem("swag_flow_anon_threads");
+        if (local) {
+          const parsed = JSON.parse(local);
+          const updated = parsed.filter((t: { id: string }) => t.id !== threadId);
+          localStorage.setItem("swag_flow_anon_threads", JSON.stringify(updated));
+        }
+      } catch {}
+    }
+
+    // If we're on the deleted thread, navigate home
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get("thread") === threadId) {
+        window.location.href = "/";
+      }
     }
   };
 
@@ -245,11 +275,11 @@ export default function AppShell({ children, breadcrumb = "Arena" }: AppShellPro
           <div className="flex-1 overflow-y-auto space-y-1 pr-1 scrollbar-thin">
             {!isLoaded ? (
               <div className="px-3 py-4 text-xs text-muted-foreground text-center">Loading…</div>
-            ) : !user ? (
+            ) : !user && threads.length === 0 ? (
               <div className="px-3 py-6 text-center flex flex-col items-center gap-3 bg-muted/20 border border-border-custom/40 rounded-xl my-2">
                 <MessageSquare size={22} className="text-muted-foreground/60" />
                 <p className="text-xs text-muted-foreground font-medium leading-relaxed">
-                  Sign in to create, save, and access thread history.
+                  No threads yet. Enter a prompt to start one, or sign in to sync history across devices.
                 </p>
                 <SignInButton mode="modal">
                   <button className="text-xs font-bold text-accent hover:underline cursor-pointer">
