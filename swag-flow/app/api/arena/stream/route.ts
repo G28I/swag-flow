@@ -20,14 +20,11 @@ export async function POST(req: NextRequest) {
       userId = authObj.userId;
     }
 
-    // In local development, if no active session exists, fallback to mock user
     if (!userId && process.env.NODE_ENV === "development") {
       userId = "mock_user_123";
     }
 
-    if (!userId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const effectiveUserId = userId || "anonymous";
 
     // 2. Clone request to read body for Arcjet validation (if required),
     // then validate body parameters.
@@ -40,7 +37,7 @@ export async function POST(req: NextRequest) {
 
     // 3. Run Arcjet protection (rate limiting, bot detection, shield)
     // We pass userId to track the token bucket limit per user across all models
-    const decision = await aj.protect(req, { userId, requested: 1 });
+    const decision = await aj.protect(req, { userId: effectiveUserId, requested: 1 });
     if (decision.isDenied()) {
       if (decision.reason.isRateLimit()) {
         return NextResponse.json(
@@ -56,8 +53,8 @@ export async function POST(req: NextRequest) {
 
     // 4. Parallelize thread verification, parent lookup, and past messages fetch (READ only)
     const [thread, parentMessage, pastMessages] = await Promise.all([
-      prisma.thread.findFirst({
-        where: { id: threadId, userId },
+      prisma.thread.findUnique({
+        where: { id: threadId },
       }),
       prisma.message.findFirst({
         where: { id: parentId, threadId },
@@ -70,7 +67,14 @@ export async function POST(req: NextRequest) {
 
     // 5. Enforce thread ownership and parent message validity before writing any data
     if (!thread) {
-      return NextResponse.json({ error: "Thread not found or unauthorized" }, { status: 404 });
+      return NextResponse.json({ error: "Thread not found" }, { status: 404 });
+    }
+
+    const isAnonymousThread =
+      !thread.userId || thread.userId === "anonymous" || thread.userId === "mock_user_123";
+
+    if (!isAnonymousThread && thread.userId !== userId) {
+      return NextResponse.json({ error: "Unauthorized access to thread" }, { status: 403 });
     }
 
     if (!parentMessage) {
@@ -312,7 +316,7 @@ export async function POST(req: NextRequest) {
             }
 
             // Log completion metrics in Statsig (fire-and-forget for speed)
-            logStatsigEvent(userId, "model_response_completed", {
+            logStatsigEvent(effectiveUserId, "model_response_completed", {
               threadId,
               model,
               messageId: assistantMessage.id,
@@ -374,7 +378,7 @@ export async function POST(req: NextRequest) {
           }
 
           // Log failure event in Statsig (fire-and-forget)
-          logStatsigEvent(userId, "model_response_failed", {
+          logStatsigEvent(effectiveUserId, "model_response_failed", {
             threadId,
             model,
             messageId: assistantMessage.id,
