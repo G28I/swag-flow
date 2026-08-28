@@ -648,9 +648,9 @@ function ArenaContent() {
 
     // Abort active network streams and flush current responses to turns state before switching target turn
     if (streamingTurnId) {
-      modelA.abort();
-      modelB.abort();
-      modelC.abort();
+      const textA = modelA.abort();
+      const textB = modelB.abort();
+      const textC = modelC.abort();
 
       const activeTurnId = streamingTurnId;
       setTurns((prev) =>
@@ -661,7 +661,7 @@ function ArenaContent() {
             responses: {
               modelA: {
                 ...t.responses.modelA,
-                text: modelA.text || t.responses.modelA.text,
+                text: textA || modelA.text || t.responses.modelA.text,
                 error: modelA.error || t.responses.modelA.error,
                 metrics: modelA.metrics || t.responses.modelA.metrics,
                 isStreaming: false,
@@ -669,7 +669,7 @@ function ArenaContent() {
               },
               modelB: {
                 ...t.responses.modelB,
-                text: modelB.text || t.responses.modelB.text,
+                text: textB || modelB.text || t.responses.modelB.text,
                 error: modelB.error || t.responses.modelB.error,
                 metrics: modelB.metrics || t.responses.modelB.metrics,
                 isStreaming: false,
@@ -677,7 +677,7 @@ function ArenaContent() {
               },
               modelC: {
                 ...t.responses.modelC,
-                text: modelC.text || t.responses.modelC.text,
+                text: textC || modelC.text || t.responses.modelC.text,
                 error: modelC.error || t.responses.modelC.error,
                 metrics: modelC.metrics || t.responses.modelC.metrics,
                 isStreaming: false,

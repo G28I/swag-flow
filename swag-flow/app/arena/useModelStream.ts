@@ -67,23 +67,26 @@ export function useModelStream() {
     setFallbackModel(null);
   }, []);
 
-  const abort = useCallback(() => {
+  const abort = useCallback((): string => {
+    let resultText = text;
     if (abortRef.current) {
       abortRef.current.abort();
       abortRef.current = null;
     }
-    // Flush any remaining buffered text immediately
+    // Flush any remaining buffered text immediately and return synchronous combined text
     if (textBufferRef.current) {
       const remaining = textBufferRef.current;
       textBufferRef.current = "";
-      setText((prev) => prev + remaining);
+      resultText = text + remaining;
+      setText(resultText);
     }
     if (rafIdRef.current !== null) {
       cancelAnimationFrame(rafIdRef.current);
       rafIdRef.current = null;
     }
     setIsStreaming(false);
-  }, []);
+    return resultText;
+  }, [text]);
 
   const startStream = useCallback(
     async (threadId: string, parentId: string, model: string): Promise<StreamSnapshot> => {
