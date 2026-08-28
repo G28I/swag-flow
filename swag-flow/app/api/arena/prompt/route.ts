@@ -72,7 +72,7 @@ export async function POST(req: NextRequest) {
       });
       targetThreadId = thread.id;
     } else {
-      // Verify thread exists and belongs to the user (or is an anonymous thread)
+      // Verify thread exists and strictly belongs to the caller (by Clerk userId or matching anonToken)
       const existingThread = await prisma.thread.findUnique({
         where: { id: targetThreadId },
       });
@@ -81,13 +81,16 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: "Thread not found" }, { status: 404 });
       }
 
-      const isAnonymousThread =
-        !existingThread.userId ||
-        existingThread.userId === "anonymous" ||
-        existingThread.userId === "mock_user_123" ||
-        (Boolean(anonToken) && existingThread.userId === `anon_${anonToken}`);
+      const isOwner =
+        Boolean(userId && existingThread.userId === userId) ||
+        Boolean(
+          anonToken &&
+            typeof anonToken === "string" &&
+            existingThread.userId === `anon_${anonToken.trim()}`
+        ) ||
+        (process.env.NODE_ENV === "development" && existingThread.userId === "mock_user_123");
 
-      if (!isAnonymousThread && existingThread.userId !== userId) {
+      if (!isOwner) {
         return NextResponse.json({ error: "Unauthorized access to thread" }, { status: 403 });
       }
     }

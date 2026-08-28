@@ -43,7 +43,9 @@ export async function POST(req: NextRequest) {
 
     // 3. Parse request body
     const body = await req.json();
-    const { threadId, parentId, model } = body;
+    const { threadId, parentId, model, anonToken: bodyAnonToken } = body;
+    const anonTokenHeader = req.headers.get("x-anon-token");
+    const anonToken = bodyAnonToken || anonTokenHeader;
 
     if (!threadId || !parentId || !model) {
       return NextResponse.json({ error: "Missing required parameters" }, { status: 400 });
@@ -68,10 +70,16 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Thread not found" }, { status: 404 });
     }
 
-    const isAnonymousThread =
-      !thread.userId || thread.userId === "anonymous" || thread.userId === "mock_user_123";
+    const isOwner =
+      Boolean(userId && thread.userId === userId) ||
+      Boolean(
+        anonToken &&
+          typeof anonToken === "string" &&
+          thread.userId === `anon_${anonToken.trim()}`
+      ) ||
+      (process.env.NODE_ENV === "development" && thread.userId === "mock_user_123");
 
-    if (!isAnonymousThread && thread.userId !== userId) {
+    if (!isOwner) {
       return NextResponse.json({ error: "Unauthorized access to thread" }, { status: 403 });
     }
 
