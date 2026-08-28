@@ -395,18 +395,37 @@ export async function POST(req: NextRequest) {
             throw streamError;
           }
         } catch (err: unknown) {
+          // Log full internal error diagnostics to server logs for debugging
           console.error("Error during streaming process:", err);
+
+          const rawErrorString = err instanceof Error ? err.message : String(err);
+          const lowerErr = rawErrorString.toLowerCase();
 
           const isTimeout =
             err instanceof Error &&
             (err.name === "TimeoutError" ||
               err.name === "AbortError" ||
-              err.message.toLowerCase().includes("timeout"));
+              lowerErr.includes("timeout"));
+
+          const isRateLimit = lowerErr.includes("429") || lowerErr.includes("rate limit");
+          const isCapacityOrServiceErr =
+            lowerErr.includes("503") ||
+            lowerErr.includes("500") ||
+            lowerErr.includes("502") ||
+            lowerErr.includes("504") ||
+            lowerErr.includes("overloaded") ||
+            lowerErr.includes("capacity") ||
+            lowerErr.includes("unavailable");
+
+          // Sanitize browser-facing error message to prevent leaking internal provider secret details or diagnostic IDs
           const errorMessage = isTimeout
             ? "Model connection timed out due to inactivity. Click 🔄 to retry."
-            : err instanceof Error
-              ? err.message
-              : "Unknown error";
+            : isRateLimit
+              ? "The model provider is temporarily rate limited. Please wait a moment and click 🔄 to retry."
+              : isCapacityOrServiceErr
+                ? "The AI model service is temporarily overloaded or unavailable. Click 🔄 to retry."
+                : "Unable to complete response from model provider. Click 🔄 to retry.";
+
           const elapsed = (performance.now() - startTime) / 1000;
           const actualTtft = ttft ?? elapsed;
 
