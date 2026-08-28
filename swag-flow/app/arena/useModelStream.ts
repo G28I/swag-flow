@@ -1,4 +1,5 @@
 import { useState, useCallback, useRef } from "react";
+import { getAnonToken } from "@/app/lib/anonToken";
 
 export interface StreamMetrics {
   latency: number;
@@ -120,15 +121,18 @@ export function useModelStream() {
       try {
         resetWatchdog();
 
+        const anonToken = getAnonToken();
         const response = await fetch("/api/arena/stream", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
+            "x-anon-token": anonToken,
           },
           body: JSON.stringify({
             threadId,
             parentId,
             model,
+            anonToken,
           }),
           signal: controller.signal,
         });
