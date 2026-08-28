@@ -440,10 +440,12 @@ function ArenaContent() {
     const modelsSlugs = turn.models.map((m) => m.id);
 
     try {
+      const anonToken = getAnonToken();
       const res = await fetch("/api/arena/vote", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          "x-anon-token": anonToken,
         },
         body: JSON.stringify({
           threadId,
@@ -451,6 +453,7 @@ function ArenaContent() {
           votedMessageId,
           votedModel,
           models: modelsSlugs,
+          anonToken,
         }),
       });
 
@@ -496,7 +499,7 @@ function ArenaContent() {
 
     setTurnVersionsMap((prev) => ({
       ...prev,
-      [turnId]: updatedVersions,
+      [turnId]: [...existingVersions, newTurn],
     }));
 
     setActiveVersionIndexMap((prev) => ({
@@ -556,10 +559,11 @@ function ArenaContent() {
     setStreamingSlot("all");
 
     try {
+      const anonToken = getAnonToken();
       const response = await fetch("/api/arena/prompt", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt: editedPromptText.trim(), threadId }),
+        headers: { "Content-Type": "application/json", "x-anon-token": anonToken },
+        body: JSON.stringify({ prompt: editedPromptText.trim(), threadId, anonToken }),
       });
 
       if (!response.ok) {
@@ -614,10 +618,11 @@ function ArenaContent() {
 
     if (!targetThreadId || !targetPromptId) {
       try {
+        const anonToken = getAnonToken();
         const res = await fetch("/api/arena/prompt", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ prompt: turn.prompt, threadId: targetThreadId }),
+          headers: { "Content-Type": "application/json", "x-anon-token": anonToken },
+          body: JSON.stringify({ prompt: turn.prompt, threadId: targetThreadId, anonToken }),
         });
         if (!res.ok) throw new Error("Failed to prepare prompt for regeneration.");
         const data = await res.json();
