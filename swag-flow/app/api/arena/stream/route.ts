@@ -118,6 +118,26 @@ export async function POST(req: NextRequest) {
         let tokenCount = 0;
         let completionText = "";
         let isFirstToken = true;
+        let activeAbortController: AbortController | null = null;
+        let inactivityTimeout: NodeJS.Timeout | null = null;
+
+        const clearInactivityTimeout = () => {
+          if (inactivityTimeout) {
+            clearTimeout(inactivityTimeout);
+            inactivityTimeout = null;
+          }
+        };
+
+        const resetInactivityTimeout = () => {
+          clearInactivityTimeout();
+          inactivityTimeout = setTimeout(() => {
+            if (activeAbortController) {
+              activeAbortController.abort(
+                new Error("Stream connection timed out due to inactivity.")
+              );
+            }
+          }, 15000);
+        };
 
         try {
           // Send initial metadata containing the DB message ID
@@ -126,22 +146,6 @@ export async function POST(req: NextRequest) {
               `data: ${JSON.stringify({ type: "meta", messageId: assistantMessage.id })}\n\n`
             )
           );
-
-          // Inactivity watchdog for OpenRouter connection:
-          // 15 seconds allowed for first byte or between streaming data chunks
-          const openRouterAbortController = new AbortController();
-          let inactivityTimeout: NodeJS.Timeout | null = null;
-
-          const resetInactivityTimeout = () => {
-            if (inactivityTimeout) clearTimeout(inactivityTimeout);
-            inactivityTimeout = setTimeout(() => {
-              openRouterAbortController.abort(
-                new Error("Stream connection timed out due to inactivity.")
-              );
-            }, 15000);
-          };
-
-          resetInactivityTimeout();
 
           // Fallback cascade models if primary model is rate-limited or unavailable
           const FALLBACK_CASCADE = [
@@ -160,6 +164,12 @@ export async function POST(req: NextRequest) {
             let attempts = 0;
             while (attempts < 2) {
               attempts++;
+              clearInactivityTimeout();
+              activeAbortController = new AbortController();
+
+              // 15 seconds allowed for first byte or chunk response
+              resetInactivityTimeout();
+
               try {
                 response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
                   method: "POST",
@@ -174,7 +184,7 @@ export async function POST(req: NextRequest) {
                     messages: messagesToStream,
                     stream: true,
                   }),
-                  signal: openRouterAbortController.signal,
+                  signal: activeAbortController.signal,
                 });
 
                 if (response.status === 429 && attempts < 2) {
@@ -194,7 +204,7 @@ export async function POST(req: NextRequest) {
           }
 
           if (!response || !response.ok) {
-            if (inactivityTimeout) clearTimeout(inactivityTimeout);
+            clearInactivityTimeout();
             const errText = response ? await response.text() : "No response";
             let detail = errText;
             try {
@@ -398,11 +408,13 @@ export async function POST(req: NextRequest) {
                 })}\n\n`
               )
             );
+            clearInactivityTimeout();
             controller.close();
           } catch (streamError: unknown) {
             throw streamError;
           }
         } catch (err: unknown) {
+          clearInactivityTimeout();
           // Log full internal error diagnostics to server logs for debugging
           console.error("Error during streaming process:", err);
 
