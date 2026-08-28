@@ -200,6 +200,11 @@ function ArenaContent() {
             setTurns([]);
           } else if (res.status === 403) {
             setIsOwner(false);
+            setTurns([]);
+            setThreadTitle("Access Denied");
+            try {
+              localStorage.removeItem(targetKey);
+            } catch {}
           }
           return;
         }
@@ -1040,7 +1045,24 @@ function ArenaContent() {
           </div>
         )}
 
-        {isNotFound ? (
+        {!isOwner && activeTurns.length === 0 ? (
+          /* Access Denied State */
+          <div className="max-w-md mx-auto my-20 p-8 rounded-2xl bg-card-bg border border-border-custom text-center flex flex-col items-center gap-4 shadow-xl">
+            <div className="w-12 h-12 rounded-2xl bg-amber-500/10 text-amber-500 flex items-center justify-center font-bold text-lg">
+              <Lock size={24} />
+            </div>
+            <h2 className="text-xl font-extrabold text-foreground">Access Denied</h2>
+            <p className="text-xs text-muted-foreground leading-relaxed">
+              This conversation history is private to its owner. Sign in with the owner account to view it.
+            </p>
+            <button
+              onClick={handleReset}
+              className="px-5 py-2.5 bg-accent hover:bg-accent-hover text-white text-xs font-bold rounded-xl transition-all shadow-md cursor-pointer mt-2"
+            >
+              Start New Arena
+            </button>
+          </div>
+        ) : isNotFound ? (
           /* Not Found State */
           <div className="max-w-md mx-auto my-20 p-8 rounded-2xl bg-card-bg border border-border-custom text-center flex flex-col items-center gap-4 shadow-xl">
             <div className="w-12 h-12 rounded-2xl bg-red-500/10 text-red-500 flex items-center justify-center font-bold text-lg">
