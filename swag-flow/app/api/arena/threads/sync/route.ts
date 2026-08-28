@@ -25,20 +25,28 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json();
-    const { threadIds } = body;
+    const { threadIds, anonToken } = body;
 
     if (!Array.isArray(threadIds) || threadIds.length === 0) {
       return NextResponse.json({ syncedCount: 0 });
     }
 
-    // Update any anonymous threads in PostgreSQL to assign ownership to the authenticated Clerk user
+    // Requiring anonToken prevents arbitrary thread claiming.
+    // Threads can only be synced if they match the user's specific anonToken binding or generic legacy anonymous.
+    const validUserIdFilter: ({ userId: string })[] = [
+      { userId: "anonymous" },
+      { userId: "mock_user_123" },
+    ];
+
+    if (anonToken && typeof anonToken === "string" && anonToken.trim().length > 0) {
+      validUserIdFilter.push({ userId: `anon_${anonToken}` });
+    }
+
+    // Update matching anonymous threads to assign ownership to the authenticated Clerk user
     const result = await prisma.thread.updateMany({
       where: {
         id: { in: threadIds },
-        OR: [
-          { userId: "anonymous" },
-          { userId: "mock_user_123" },
-        ],
+        OR: validUserIdFilter,
       },
       data: {
         userId,

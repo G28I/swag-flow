@@ -28,7 +28,7 @@ export async function POST(req: NextRequest) {
     // 2. Clone request to preserve stream for Arcjet validation, then parse body
     const clonedReq = req.clone();
     const body = await req.json();
-    const { prompt, threadId } = body;
+    const { prompt, threadId, anonToken } = body;
 
     if (!prompt || typeof prompt !== "string" || prompt.trim() === "") {
       return NextResponse.json({ error: "Prompt is required" }, { status: 400 });
@@ -62,10 +62,12 @@ export async function POST(req: NextRequest) {
     // 4. Create thread if not provided
     if (!targetThreadId) {
       const title = prompt.length > 40 ? prompt.substring(0, 40) + "..." : prompt;
+      // If user is unauthenticated and provides an anonToken, bind thread to anon_<anonToken>
+      const ownerId = !userId && anonToken && typeof anonToken === "string" ? `anon_${anonToken}` : effectiveUserId;
       const thread = await prisma.thread.create({
         data: {
           title,
-          userId: effectiveUserId,
+          userId: ownerId,
         },
       });
       targetThreadId = thread.id;
@@ -82,7 +84,8 @@ export async function POST(req: NextRequest) {
       const isAnonymousThread =
         !existingThread.userId ||
         existingThread.userId === "anonymous" ||
-        existingThread.userId === "mock_user_123";
+        existingThread.userId === "mock_user_123" ||
+        (Boolean(anonToken) && existingThread.userId === `anon_${anonToken}`);
 
       if (!isAnonymousThread && existingThread.userId !== userId) {
         return NextResponse.json({ error: "Unauthorized access to thread" }, { status: 403 });

@@ -79,10 +79,11 @@ export default function AppShell({ children, breadcrumb = "Arena" }: AppShellPro
               const parsed: ThreadItem[] = JSON.parse(localAnon);
               const threadIds = parsed.map((t) => t.id).filter(Boolean);
               if (threadIds.length > 0) {
+                const anonToken = typeof window !== "undefined" ? localStorage.getItem("swag_flow_anon_token") || "" : "";
                 await fetch("/api/arena/threads/sync", {
                   method: "POST",
                   headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ threadIds }),
+                  body: JSON.stringify({ threadIds, anonToken }),
                 });
               }
               localStorage.removeItem("swag_flow_anon_threads");

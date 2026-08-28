@@ -6,6 +6,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { useModelStream } from "./arena/useModelStream";
 import AppShell from "@/components/AppShell";
+import { getAnonToken } from "@/app/lib/anonToken";
 import { SignInButton } from "@clerk/nextjs";
 import {
   ArrowUp,
@@ -787,12 +788,13 @@ function ArenaContent() {
 
     try {
       // 1. Establish thread and user message in database
+      const anonToken = getAnonToken();
       let response = await fetch("/api/arena/prompt", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ prompt: userPrompt, threadId }),
+        body: JSON.stringify({ prompt: userPrompt, threadId, anonToken }),
       });
 
       if (!response.ok) {
@@ -805,7 +807,7 @@ function ArenaContent() {
             headers: {
               "Content-Type": "application/json",
             },
-            body: JSON.stringify({ prompt: userPrompt, threadId: null }),
+            body: JSON.stringify({ prompt: userPrompt, threadId: null, anonToken }),
           });
 
           if (!response.ok) {
