@@ -31,15 +31,23 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ syncedCount: 0 });
     }
 
-    // Requiring anonToken prevents arbitrary thread claiming.
-    // Threads can only be synced if they match the user's specific anonToken binding or generic legacy anonymous.
+    if (!anonToken || typeof anonToken !== "string" || anonToken.trim().length === 0) {
+      return NextResponse.json(
+        { error: "Anonymous ownership token is required to sync threads." },
+        { status: 400 }
+      );
+    }
+
+    const cleanAnonToken = anonToken.trim();
+
+    // Strict ownership transfer predicate:
+    // Threads can ONLY be claimed if their stored userId matches the specific client session token `anon_<token>`
     const validUserIdFilter: ({ userId: string })[] = [
-      { userId: "anonymous" },
-      { userId: "mock_user_123" },
+      { userId: `anon_${cleanAnonToken}` },
     ];
 
-    if (anonToken && typeof anonToken === "string" && anonToken.trim().length > 0) {
-      validUserIdFilter.push({ userId: `anon_${anonToken}` });
+    if (process.env.NODE_ENV === "development") {
+      validUserIdFilter.push({ userId: "mock_user_123" });
     }
 
     // Update matching anonymous threads to assign ownership to the authenticated Clerk user
