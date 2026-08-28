@@ -187,12 +187,19 @@ function ArenaContent() {
       }
 
       try {
-        const res = await fetch(`/api/arena/threads?id=${threadParam}`);
+        const anonToken = getAnonToken();
+        const res = await fetch(`/api/arena/threads?id=${threadParam}`, {
+          headers: {
+            "x-anon-token": anonToken,
+          },
+        });
         if (!res.ok) {
           if (res.status === 404) {
             setIsNotFound(true);
             setThreadTitle("Not Found");
             setTurns([]);
+          } else if (res.status === 403) {
+            setIsOwner(false);
           }
           return;
         }

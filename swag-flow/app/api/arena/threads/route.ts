@@ -38,8 +38,9 @@ export async function GET(req: NextRequest) {
 
     const { searchParams } = new URL(req.url);
     const threadId = searchParams.get("id");
+    const anonToken = req.headers.get("x-anon-token") || searchParams.get("anonToken");
 
-    // Single thread lookup: Public read allowed, isOwner flag computed
+    // Single thread lookup: Require matching authenticated owner or anonymous ownership token before returning payload
     if (threadId) {
       const thread = await prisma.thread.findUnique({
         where: { id: threadId },
@@ -65,15 +66,25 @@ export async function GET(req: NextRequest) {
         return NextResponse.json({ error: "Thread not found" }, { status: 404 });
       }
 
-      const isAnonymousThread = !thread.userId || thread.userId === "anonymous" || thread.userId === "mock_user_123";
-      const isOwner = isAnonymousThread ? true : Boolean(userId && thread.userId === userId);
+      const isOwner =
+        Boolean(userId && thread.userId === userId) ||
+        Boolean(
+          anonToken &&
+            typeof anonToken === "string" &&
+            thread.userId === `anon_${anonToken.trim()}`
+        ) ||
+        (process.env.NODE_ENV === "development" && thread.userId === "mock_user_123");
+
+      if (!isOwner) {
+        return NextResponse.json({ error: "Unauthorized access to thread history" }, { status: 403 });
+      }
 
       // Omit internal user identifier from payload for privacy
       const { userId: _internalUserId, ...safeThread } = thread;
 
       return NextResponse.json({
         ...safeThread,
-        isOwner,
+        isOwner: true,
       });
     }
 
