@@ -646,8 +646,12 @@ function ArenaContent() {
       }
     }
 
-    // Flush any active streaming responses from current streaming turn before switching streamingTurnId
+    // Abort active network streams and flush current responses to turns state before switching target turn
     if (streamingTurnId) {
+      modelA.abort();
+      modelB.abort();
+      modelC.abort();
+
       const activeTurnId = streamingTurnId;
       setTurns((prev) =>
         prev.map((t) => {
