@@ -107,10 +107,12 @@ export function useModelStream() {
 
       // Sliding watchdog timer: aborts stream if no chunks arrive for 15s
       const watchdogRef: { id: NodeJS.Timeout | null } = { id: null };
+      let isWatchdogAborted = false;
       const resetWatchdog = () => {
         if (watchdogRef.id) clearTimeout(watchdogRef.id);
         watchdogRef.id = setTimeout(() => {
           if (abortRef.current === controller) {
+            isWatchdogAborted = true;
             controller.abort();
             setError("Stream connection timed out due to inactivity.");
             setIsStreaming(false);
@@ -222,12 +224,20 @@ export function useModelStream() {
           }
         }
       } catch (err: unknown) {
-        const errMsg =
-          err instanceof Error ? err.message : "A streaming error occurred. Please try again.";
-        if (abortRef.current === controller) {
-          setError(errMsg);
+        if (isWatchdogAborted) {
+          const timeoutMsg = "Stream connection timed out due to inactivity.";
+          if (abortRef.current === controller) {
+            setError(timeoutMsg);
+          }
+          snapshotError = timeoutMsg;
+        } else {
+          const errMsg =
+            err instanceof Error ? err.message : "A streaming error occurred. Please try again.";
+          if (abortRef.current === controller) {
+            setError(errMsg);
+          }
+          snapshotError = errMsg;
         }
-        snapshotError = errMsg;
       } finally {
         if (watchdogRef.id) clearTimeout(watchdogRef.id);
         // Only flush buffer, cancel RAF, and set isStreaming=false if THIS controller is still the active stream
