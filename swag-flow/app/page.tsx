@@ -914,7 +914,13 @@ function ArenaContent() {
   const activeTurns = turns.map((turn) => {
     if (
       turn.id === streamingTurnId &&
-      (isStreamingAny || modelA.text || modelB.text || modelC.text)
+      (isStreamingAny ||
+        modelA.text ||
+        modelB.text ||
+        modelC.text ||
+        modelA.error ||
+        modelB.error ||
+        modelC.error)
     ) {
       return {
         ...turn,
