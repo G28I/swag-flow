@@ -646,6 +646,45 @@ function ArenaContent() {
       }
     }
 
+    // Flush any active streaming responses from current streaming turn before switching streamingTurnId
+    if (streamingTurnId) {
+      const activeTurnId = streamingTurnId;
+      setTurns((prev) =>
+        prev.map((t) => {
+          if (t.id !== activeTurnId) return t;
+          return {
+            ...t,
+            responses: {
+              modelA: {
+                ...t.responses.modelA,
+                text: modelA.text || t.responses.modelA.text,
+                error: modelA.error || t.responses.modelA.error,
+                metrics: modelA.metrics || t.responses.modelA.metrics,
+                isStreaming: false,
+                messageId: modelA.messageId || t.responses.modelA.messageId,
+              },
+              modelB: {
+                ...t.responses.modelB,
+                text: modelB.text || t.responses.modelB.text,
+                error: modelB.error || t.responses.modelB.error,
+                metrics: modelB.metrics || t.responses.modelB.metrics,
+                isStreaming: false,
+                messageId: modelB.messageId || t.responses.modelB.messageId,
+              },
+              modelC: {
+                ...t.responses.modelC,
+                text: modelC.text || t.responses.modelC.text,
+                error: modelC.error || t.responses.modelC.error,
+                metrics: modelC.metrics || t.responses.modelC.metrics,
+                isStreaming: false,
+                messageId: modelC.messageId || t.responses.modelC.messageId,
+              },
+            },
+          };
+        })
+      );
+    }
+
     setStreamingTurnId(turnId);
     setStreamingSlot(slot);
 
