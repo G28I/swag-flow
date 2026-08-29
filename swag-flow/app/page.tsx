@@ -356,12 +356,7 @@ function ArenaContent() {
       } catch (err) {
         console.error("Failed to load thread history:", err);
         if (!cancelled) {
-          setTurns([]);
-          setIsOwner(false);
-          setError("Failed to verify thread ownership. Please check connection and try again.");
-          try {
-            localStorage.removeItem(targetKey);
-          } catch {}
+          setError("Unable to sync thread with server. Showing cached conversation.");
         }
       }
     }
@@ -659,12 +654,11 @@ function ArenaContent() {
       }
     }
 
-    // Abort active network streams and flush current responses to turns state before switching target turn
-    if (streamingTurnId) {
-      const textA = modelA.abort();
-      const textB = modelB.abort();
-      const textC = modelC.abort();
+    // Abort active network stream and flush current response for target slot before switching target turn
+    const targetHook = slot === "modelA" ? modelA : slot === "modelB" ? modelB : modelC;
+    const flushedText = targetHook.abort();
 
+    if (streamingTurnId) {
       const activeTurnId = streamingTurnId;
       setTurns((prev) =>
         prev.map((t) => {
@@ -672,29 +666,14 @@ function ArenaContent() {
           return {
             ...t,
             responses: {
-              modelA: {
-                ...t.responses.modelA,
-                text: textA || modelA.text || t.responses.modelA.text,
-                error: modelA.error || t.responses.modelA.error,
-                metrics: modelA.metrics || t.responses.modelA.metrics,
+              ...t.responses,
+              [slot]: {
+                ...t.responses[slot],
+                text: flushedText || targetHook.text || t.responses[slot].text,
+                error: targetHook.error || t.responses[slot].error,
+                metrics: targetHook.metrics || t.responses[slot].metrics,
                 isStreaming: false,
-                messageId: modelA.messageId || t.responses.modelA.messageId,
-              },
-              modelB: {
-                ...t.responses.modelB,
-                text: textB || modelB.text || t.responses.modelB.text,
-                error: modelB.error || t.responses.modelB.error,
-                metrics: modelB.metrics || t.responses.modelB.metrics,
-                isStreaming: false,
-                messageId: modelB.messageId || t.responses.modelB.messageId,
-              },
-              modelC: {
-                ...t.responses.modelC,
-                text: textC || modelC.text || t.responses.modelC.text,
-                error: modelC.error || t.responses.modelC.error,
-                metrics: modelC.metrics || t.responses.modelC.metrics,
-                isStreaming: false,
-                messageId: modelC.messageId || t.responses.modelC.messageId,
+                messageId: targetHook.messageId || t.responses[slot].messageId,
               },
             },
           };

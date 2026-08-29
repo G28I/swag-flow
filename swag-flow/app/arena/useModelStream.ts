@@ -27,6 +27,7 @@ export function useModelStream() {
   // RAF-batched text buffer — accumulates tokens between animation frames
   // so React only re-renders at ~60fps instead of 80–240+ times/sec
   const textBufferRef = useRef("");
+  const accumulatedTextRef = useRef("");
   const rafIdRef = useRef<number | null>(null);
 
   // AbortController for cancelling in-flight streams
@@ -54,6 +55,7 @@ export function useModelStream() {
       rafIdRef.current = null;
     }
     textBufferRef.current = "";
+    accumulatedTextRef.current = "";
     // Abort any in-flight stream
     if (abortRef.current) {
       abortRef.current.abort();
@@ -68,25 +70,23 @@ export function useModelStream() {
   }, []);
 
   const abort = useCallback((): string => {
-    let resultText = text;
     if (abortRef.current) {
       abortRef.current.abort();
       abortRef.current = null;
     }
-    // Flush any remaining buffered text immediately and return synchronous combined text
+    // Flush any remaining buffered text immediately into state
     if (textBufferRef.current) {
       const remaining = textBufferRef.current;
       textBufferRef.current = "";
-      resultText = text + remaining;
-      setText(resultText);
+      setText((prev) => prev + remaining);
     }
     if (rafIdRef.current !== null) {
       cancelAnimationFrame(rafIdRef.current);
       rafIdRef.current = null;
     }
     setIsStreaming(false);
-    return resultText;
-  }, [text]);
+    return accumulatedTextRef.current;
+  }, []);
 
   const startStream = useCallback(
     async (threadId: string, parentId: string, model: string): Promise<StreamSnapshot> => {
@@ -185,6 +185,7 @@ export function useModelStream() {
                   snapshotFallbackModel = event.fallbackModel;
                 } else if (event.type === "token") {
                   // Accumulate in buffer and snapshot, schedule RAF flush if active controller
+                  accumulatedTextRef.current += event.text;
                   if (abortRef.current === controller) {
                     textBufferRef.current += event.text;
                     scheduleFlush();
