@@ -355,6 +355,14 @@ function ArenaContent() {
         }
       } catch (err) {
         console.error("Failed to load thread history:", err);
+        if (!cancelled) {
+          setTurns([]);
+          setIsOwner(false);
+          setError("Failed to verify thread ownership. Please check connection and try again.");
+          try {
+            localStorage.removeItem(targetKey);
+          } catch {}
+        }
       }
     }
 
