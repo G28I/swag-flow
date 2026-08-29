@@ -72,13 +72,10 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Missing required parameters" }, { status: 400 });
     }
 
-    // 4. Parallelize thread verification, parent lookup, and past messages fetch (READ only)
-    const [thread, parentMessage, pastMessages] = await Promise.all([
+    // 4. Parallelize thread verification and past messages fetch (READ only — 2 queries instead of 3)
+    const [thread, pastMessages] = await Promise.all([
       prisma.thread.findUnique({
         where: { id: threadId },
-      }),
-      prisma.message.findFirst({
-        where: { id: parentId, threadId },
       }),
       prisma.message.findMany({
         where: { threadId },
@@ -104,6 +101,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Unauthorized access to thread" }, { status: 403 });
     }
 
+    const parentMessage = pastMessages.find((m) => m.id === parentId);
     if (!parentMessage) {
       return NextResponse.json(
         { error: "Parent message not found in this thread" },
@@ -111,8 +109,8 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 6. Create assistant message placeholder in database only after authorization passes
-    const assistantMessage = await prisma.message.create({
+    // 6. Asynchronously initiate assistant placeholder creation
+    const assistantMessagePromise = prisma.message.create({
       data: {
         role: "assistant",
         content: "",
@@ -130,7 +128,7 @@ export async function POST(req: NextRequest) {
       content: m.content,
     }));
 
-    // 5. Return standard Server-Sent Events (SSE) Response
+    // 7. Return standard Server-Sent Events (SSE) Response
     const encoder = new TextEncoder();
     const customStream = new ReadableStream({
       async start(controller) {
@@ -141,6 +139,9 @@ export async function POST(req: NextRequest) {
         let isFirstToken = true;
         let activeAbortController: AbortController | null = null;
         let inactivityTimeout: NodeJS.Timeout | null = null;
+
+        // Ensure assistant placeholder DB creation completes in parallel
+        const assistantMessage = await assistantMessagePromise;
 
         const clearInactivityTimeout = () => {
           if (inactivityTimeout) {
@@ -162,11 +163,7 @@ export async function POST(req: NextRequest) {
 
         try {
           // Send initial metadata containing the DB message ID
-          controller.enqueue(
-            encoder.encode(
-              `data: ${JSON.stringify({ type: "meta", messageId: assistantMessage.id })}\n\n`
-            )
-          );
+          safeEnqueue(controller, encoder, { type: "meta", messageId: assistantMessage.id });
 
           // Fallback cascade models if primary model is rate-limited or unavailable
           const FALLBACK_CASCADE = [
