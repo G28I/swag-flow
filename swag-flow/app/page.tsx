@@ -194,17 +194,20 @@ function ArenaContent() {
           },
         });
         if (!res.ok) {
+          setIsOwner(false);
+          setTurns([]);
+          try {
+            localStorage.removeItem(targetKey);
+          } catch {}
+
           if (res.status === 404) {
             setIsNotFound(true);
             setThreadTitle("Not Found");
-            setTurns([]);
           } else if (res.status === 403) {
-            setIsOwner(false);
-            setTurns([]);
             setThreadTitle("Access Denied");
-            try {
-              localStorage.removeItem(targetKey);
-            } catch {}
+          } else {
+            setThreadTitle("Error");
+            setError("Unable to verify thread ownership. Please try again.");
           }
           return;
         }
@@ -254,51 +257,19 @@ function ArenaContent() {
                   );
                 });
               } else {
-                turnModels =
-                  availableModels.length > 0 ? availableModels.slice(0, 3) : [...FALLBACK_MODELS];
+                turnModels = [...availableModels.slice(0, 2)];
               }
 
-              // Match replies precisely by latest model response
-              const rA = turnModels[0]?.id
-                ? [...replies]
-                    .reverse()
-                    .find((r: { model: string | null }) => r.model === turnModels[0].id) ||
-                  replies[0]
-                : replies[0];
-              const rB = turnModels[1]?.id
-                ? [...replies]
-                    .reverse()
-                    .find((r: { model: string | null }) => r.model === turnModels[1].id) ||
-                  replies[1]
-                : replies[1];
-              const rC = turnModels[2]?.id
-                ? [...replies]
-                    .reverse()
-                    .find((r: { model: string | null }) => r.model === turnModels[2].id) ||
-                  replies[2]
-                : replies[2];
-
-              let winnerModel: string | null = null;
-              if (vote) {
-                if (!vote.votedModel && !vote.votedMessageId) {
-                  winnerModel = "tie";
-                } else if (vote.votedMessageId) {
-                  if (rA && vote.votedMessageId === rA.id) winnerModel = "modelA";
-                  else if (rB && vote.votedMessageId === rB.id) winnerModel = "modelB";
-                  else if (rC && vote.votedMessageId === rC.id) winnerModel = "modelC";
-                } else if (vote.votedModel) {
-                  if (turnModels[0]?.id === vote.votedModel) winnerModel = "modelA";
-                  else if (turnModels[1]?.id === vote.votedModel) winnerModel = "modelB";
-                  else if (turnModels[2]?.id === vote.votedModel) winnerModel = "modelC";
-                }
-              }
+              const rA = replies.find((m: { model: string }) => m.model === turnModels[0]?.id);
+              const rB = replies.find((m: { model: string }) => m.model === turnModels[1]?.id);
+              const rC = replies.find((m: { model: string }) => m.model === turnModels[2]?.id);
 
               return {
-                id: userMsg.id,
+                id: `turn_${userMsg.id}`,
                 prompt: userMsg.content,
                 promptId: userMsg.id,
-                winnerModel,
-                activeCount: Math.max(turnModels.length, replies.length, 1),
+                winnerModel: vote?.votedModel || null,
+                activeCount: turnModels.length,
                 models: turnModels,
                 responses: {
                   modelA: {
@@ -306,8 +277,8 @@ function ArenaContent() {
                     error: null,
                     metrics: rA
                       ? {
-                          latency: rA.latency || 0,
                           ttft: rA.ttft || 0,
+                          latency: rA.latency || 0,
                           tokensPerSec: rA.tokensPerSec || 0,
                           tokenCount: rA.tokenCount || 0,
                         }
@@ -320,8 +291,8 @@ function ArenaContent() {
                     error: null,
                     metrics: rB
                       ? {
-                          latency: rB.latency || 0,
                           ttft: rB.ttft || 0,
+                          latency: rB.latency || 0,
                           tokensPerSec: rB.tokensPerSec || 0,
                           tokenCount: rB.tokenCount || 0,
                         }
@@ -334,8 +305,8 @@ function ArenaContent() {
                     error: null,
                     metrics: rC
                       ? {
-                          latency: rC.latency || 0,
                           ttft: rC.ttft || 0,
+                          latency: rC.latency || 0,
                           tokensPerSec: rC.tokensPerSec || 0,
                           tokenCount: rC.tokenCount || 0,
                         }
@@ -356,7 +327,12 @@ function ArenaContent() {
       } catch (err) {
         console.error("Failed to load thread history:", err);
         if (!cancelled) {
-          setError("Unable to sync thread with server. Showing cached conversation.");
+          setIsOwner(false);
+          setTurns([]);
+          setError("Failed to verify thread ownership. Please check connection and try again.");
+          try {
+            localStorage.removeItem(targetKey);
+          } catch {}
         }
       }
     }
@@ -656,7 +632,10 @@ function ArenaContent() {
 
     // Abort active network stream and flush current response for target slot before switching target turn
     const targetHook = slot === "modelA" ? modelA : slot === "modelB" ? modelB : modelC;
-    const flushedText = targetHook.abort();
+    let flushedText = "";
+    if (streamingTurnId === turnId || targetHook.isStreaming) {
+      flushedText = targetHook.abort();
+    }
 
     if (streamingTurnId) {
       const activeTurnId = streamingTurnId;
