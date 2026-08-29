@@ -5,6 +5,27 @@ import { aj } from "@/app/lib/arcjet";
 import { logStatsigEvent } from "@/app/lib/statsig";
 import { env } from "@/app/lib/env";
 
+function safeEnqueue(
+  controller: ReadableStreamDefaultController,
+  encoder: TextEncoder,
+  data: unknown
+): boolean {
+  try {
+    controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function safeClose(controller: ReadableStreamDefaultController) {
+  try {
+    controller.close();
+  } catch {
+    // Ignore if controller is already closed or errored
+  }
+}
+
 export async function POST(req: NextRequest) {
   try {
     // 1. Authenticate user
@@ -296,11 +317,7 @@ export async function POST(req: NextRequest) {
                       // Fallback token counter in case usage statistics aren't received
                       tokenCount += 1;
 
-                      controller.enqueue(
-                        encoder.encode(
-                          `data: ${JSON.stringify({ type: "token", text: content })}\n\n`
-                        )
-                      );
+                      safeEnqueue(controller, encoder, { type: "token", text: content });
 
                       // Periodically flush accumulated text to database (every 3s — final write on done is authoritative)
                       const now = performance.now();
@@ -350,11 +367,7 @@ export async function POST(req: NextRequest) {
                   if (content) {
                     completionText += content;
                     tokenCount += 1;
-                    controller.enqueue(
-                      encoder.encode(
-                        `data: ${JSON.stringify({ type: "token", text: content })}\n\n`
-                      )
-                    );
+                    safeEnqueue(controller, encoder, { type: "token", text: content });
                   }
                   if (parsedObj.usage?.completion_tokens) {
                     tokenCount = parsedObj.usage.completion_tokens;
@@ -397,19 +410,15 @@ export async function POST(req: NextRequest) {
             }).catch(() => {});
 
             // Send completion metadata to the client
-            controller.enqueue(
-              encoder.encode(
-                `data: ${JSON.stringify({
-                  type: "done",
-                  latency: totalTime,
-                  ttft: actualTtft,
-                  tokensPerSec,
-                  tokenCount,
-                })}\n\n`
-              )
-            );
+            safeEnqueue(controller, encoder, {
+              type: "done",
+              latency: totalTime,
+              ttft: actualTtft,
+              tokensPerSec,
+              tokenCount,
+            });
             clearInactivityTimeout();
-            controller.close();
+            safeClose(controller);
           } catch (streamError: unknown) {
             throw streamError;
           }
