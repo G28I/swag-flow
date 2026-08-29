@@ -109,8 +109,8 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 6. Asynchronously initiate assistant placeholder creation
-    const assistantMessagePromise = prisma.message.create({
+    // 6. Create assistant message placeholder in database only after authorization passes
+    const assistantMessage = await prisma.message.create({
       data: {
         role: "assistant",
         content: "",
@@ -129,19 +129,18 @@ export async function POST(req: NextRequest) {
     }));
 
     // 7. Return standard Server-Sent Events (SSE) Response
+    const reqRecvTime = performance.now();
     const encoder = new TextEncoder();
     const customStream = new ReadableStream({
       async start(controller) {
         let startTime = performance.now();
+        let openRouterConnectMs: number | null = null;
         let ttft: number | null = null;
         let tokenCount = 0;
         let completionText = "";
         let isFirstToken = true;
         let activeAbortController: AbortController | null = null;
         let inactivityTimeout: NodeJS.Timeout | null = null;
-
-        // Ensure assistant placeholder DB creation completes in parallel
-        const assistantMessage = await assistantMessagePromise;
 
         const clearInactivityTimeout = () => {
           if (inactivityTimeout) {
@@ -162,8 +161,12 @@ export async function POST(req: NextRequest) {
         };
 
         try {
-          // Send initial metadata containing the DB message ID
-          safeEnqueue(controller, encoder, { type: "meta", messageId: assistantMessage.id });
+          // Send initial metadata containing the DB message ID and server receive timestamp
+          safeEnqueue(controller, encoder, {
+            type: "meta",
+            messageId: assistantMessage.id,
+            reqRecvMs: Math.round(reqRecvTime),
+          });
 
           // Fallback cascade models if primary model is rate-limited or unavailable
           const FALLBACK_CASCADE = [
@@ -189,6 +192,7 @@ export async function POST(req: NextRequest) {
               resetInactivityTimeout();
 
               try {
+                const fetchStart = performance.now();
                 response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
                   method: "POST",
                   headers: {
@@ -204,6 +208,7 @@ export async function POST(req: NextRequest) {
                   }),
                   signal: activeAbortController.signal,
                 });
+                openRouterConnectMs = performance.now() - fetchStart;
 
                 if (response.status === 429 && attempts < 2) {
                   await new Promise((res) => setTimeout(res, 300));

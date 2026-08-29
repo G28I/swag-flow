@@ -770,10 +770,11 @@ function ArenaContent() {
       return copy;
     });
 
-    // Reset streaming hooks for selected active slots
-    modelA.reset();
-    modelB.reset();
-    modelC.reset();
+    // Reset streaming hooks ONLY for active selected slots
+    activeModels.forEach((_, idx) => {
+      const hook = idx === 0 ? modelA : idx === 1 ? modelB : modelC;
+      hook.reset();
+    });
 
     const turnId = Math.random().toString(36).substring(7);
     const initialTurn: Turn = {
@@ -852,28 +853,34 @@ function ArenaContent() {
       setThreadId(currentThreadId);
       if (typeof window !== "undefined") {
         window.history.replaceState(null, "", `/?thread=${currentThreadId}`);
-        try {
-          const existing = JSON.parse(localStorage.getItem("swag_flow_anon_threads") || "[]");
-          const title = userPrompt.length > 35 ? userPrompt.substring(0, 35) + "..." : userPrompt;
-          const updated = [
-            { id: currentThreadId, title, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
-            ...existing.filter((t: { id: string }) => t.id !== currentThreadId),
-          ].slice(0, 30);
-          localStorage.setItem("swag_flow_anon_threads", JSON.stringify(updated));
-          window.dispatchEvent(new Event("swag_flow_threads_updated"));
-        } catch {}
       }
 
       // Update promptId in active turn history
       setTurns((prev) => prev.map((t) => (t.id === turnId ? { ...t, promptId: parentId } : t)));
 
-      // 2. Fire OpenRouter streaming connections concurrently
+      // 2. Fire OpenRouter streaming connections concurrently for active slots
       activeModels.forEach((model, idx) => {
         const hook = idx === 0 ? modelA : idx === 1 ? modelB : modelC;
         hook.startStream(currentThreadId, parentId, model.id).catch((err) => {
           console.error(`Stream start error for model ${model.id}:`, err);
         });
       });
+
+      // Defer non-critical local storage history sync to background microtask
+      setTimeout(() => {
+        if (typeof window !== "undefined") {
+          try {
+            const existing = JSON.parse(localStorage.getItem("swag_flow_anon_threads") || "[]");
+            const title = userPrompt.length > 35 ? userPrompt.substring(0, 35) + "..." : userPrompt;
+            const updated = [
+              { id: currentThreadId, title, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+              ...existing.filter((t: { id: string }) => t.id !== currentThreadId),
+            ].slice(0, 30);
+            localStorage.setItem("swag_flow_anon_threads", JSON.stringify(updated));
+            window.dispatchEvent(new Event("swag_flow_threads_updated"));
+          } catch {}
+        }
+      }, 0);
     } catch (err: unknown) {
       console.error("Submission error:", err);
       const errMsg =
