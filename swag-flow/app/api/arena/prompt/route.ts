@@ -4,15 +4,24 @@ import { promptAj } from "@/app/lib/arcjet";
 import prisma from "@/app/lib/prisma";
 import { logStatsigEvent } from "@/app/lib/statsig";
 
+const isClerkConfigured = Boolean(
+  process.env.CLERK_SECRET_KEY &&
+  process.env.CLERK_SECRET_KEY !== "sk_test_placeholder" &&
+  process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY &&
+  process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY !== "pk_test_placeholder"
+);
+
 export async function POST(req: NextRequest) {
   try {
-    // 1. Authenticate user
-    const isClerkConfigured =
-      process.env.CLERK_SECRET_KEY &&
-      process.env.CLERK_SECRET_KEY !== "sk_test_placeholder" &&
-      process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY &&
-      process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY !== "pk_test_placeholder";
+    // 1. Fast payload validation before authorization and network checks
+    const body = await req.json();
+    const { prompt, threadId, anonToken } = body;
 
+    if (!prompt || typeof prompt !== "string" || prompt.trim() === "") {
+      return NextResponse.json({ error: "Prompt is required" }, { status: 400 });
+    }
+
+    // 2. Authenticate user
     let userId: string | null = null;
     if (isClerkConfigured) {
       const authObj = await auth();
@@ -24,14 +33,6 @@ export async function POST(req: NextRequest) {
     }
 
     const effectiveUserId = userId || "anonymous";
-
-    // 2. Parse body
-    const body = await req.json();
-    const { prompt, threadId, anonToken } = body;
-
-    if (!prompt || typeof prompt !== "string" || prompt.trim() === "") {
-      return NextResponse.json({ error: "Prompt is required" }, { status: 400 });
-    }
 
     // 3. Arcjet Security Check (Shield, Bot Protection, and Prompt Injection)
     const decision = await promptAj.protect(req, {
