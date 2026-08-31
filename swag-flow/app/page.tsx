@@ -388,35 +388,12 @@ function ArenaContent() {
       } catch (err) {
         console.error("Failed to load thread history:", err);
         if (!cancelled) {
-          let restoredFromCache = false;
+          setIsOwner(false);
+          setTurns([]);
+          setError("Failed to verify thread ownership. Please check connection and try again.");
           try {
-            const cached = localStorage.getItem(targetKey);
-            if (cached) {
-              const parsed = JSON.parse(cached);
-              const currentToken = getAnonToken();
-              if (
-                parsed &&
-                typeof parsed === "object" &&
-                !Array.isArray(parsed) &&
-                parsed.anonToken === currentToken &&
-                Array.isArray(parsed.turns) &&
-                parsed.turns.length > 0
-              ) {
-                setTurns(parsed.turns);
-                setIsOwner(true);
-                restoredFromCache = true;
-              }
-            }
+            localStorage.removeItem(targetKey);
           } catch {}
-
-          if (!restoredFromCache) {
-            setIsOwner(false);
-            setTurns([]);
-            setError("Failed to verify thread ownership. Please check connection and try again.");
-            try {
-              localStorage.removeItem(targetKey);
-            } catch {}
-          }
         }
       }
     }

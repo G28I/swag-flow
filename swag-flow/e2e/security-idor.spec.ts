@@ -73,12 +73,11 @@ test.describe("Security, IDOR Protection & Cache Purge E2E", () => {
       );
     });
 
-    // Navigate to unauthorized thread URL
+    // Navigate to unauthorized thread
     await page.goto("/?thread=unauthorized_thread_xyz");
+    await page.waitForResponse((res) => res.url().includes("/api/arena/threads?id=unauthorized_thread_xyz"));
 
-    // Wait for network response to ensure history fetch completes and purges cache
-    await page.waitForTimeout(2000);
-
+    // Cache should be purged on non-200 status
     const cachedItem = await page.evaluate(() => localStorage.getItem("arena_cache_unauthorized_thread_xyz"));
     expect(cachedItem).toBeNull();
   });
