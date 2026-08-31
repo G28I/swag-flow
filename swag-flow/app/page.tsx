@@ -208,25 +208,8 @@ function ArenaContent() {
         return;
       }
 
-      // Token-bound restoration from localStorage for saved thread
+      // Token-bound restoration target key for saved thread
       const targetKey = `arena_cache_${threadParam}`;
-
-      try {
-        const cached = localStorage.getItem(targetKey);
-        if (cached) {
-          const parsed = JSON.parse(cached);
-          const currentToken = getAnonToken();
-
-          if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-            // Restore cached turns only if local anonToken matches owner token
-            if (parsed.anonToken && parsed.anonToken === currentToken && Array.isArray(parsed.turns) && parsed.turns.length > 0) {
-              setTurns(parsed.turns);
-            }
-          }
-        }
-      } catch {
-        // Ignore parse errors
-      }
 
       try {
         const anonToken = getAnonToken();
@@ -394,18 +377,41 @@ function ArenaContent() {
               anonToken: currentToken,
               turns: hydratedTurns,
             };
-            localStorage.setItem(`arena_cache_${threadParam}`, JSON.stringify(payload));
+            localStorage.setItem(targetKey, JSON.stringify(payload));
           } catch {}
         }
       } catch (err) {
         console.error("Failed to load thread history:", err);
         if (!cancelled) {
-          setIsOwner(false);
-          setTurns([]);
-          setError("Failed to verify thread ownership. Please check connection and try again.");
+          let restoredFromCache = false;
           try {
-            localStorage.removeItem(targetKey);
+            const cached = localStorage.getItem(targetKey);
+            if (cached) {
+              const parsed = JSON.parse(cached);
+              const currentToken = getAnonToken();
+              if (
+                parsed &&
+                typeof parsed === "object" &&
+                !Array.isArray(parsed) &&
+                parsed.anonToken === currentToken &&
+                Array.isArray(parsed.turns) &&
+                parsed.turns.length > 0
+              ) {
+                setTurns(parsed.turns);
+                setIsOwner(true);
+                restoredFromCache = true;
+              }
+            }
           } catch {}
+
+          if (!restoredFromCache) {
+            setIsOwner(false);
+            setTurns([]);
+            setError("Failed to verify thread ownership. Please check connection and try again.");
+            try {
+              localStorage.removeItem(targetKey);
+            } catch {}
+          }
         }
       }
     }
