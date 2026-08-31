@@ -389,7 +389,12 @@ function ArenaContent() {
 
           setTurns(hydratedTurns);
           try {
-            localStorage.setItem(`arena_cache_${threadParam}`, JSON.stringify(hydratedTurns));
+            const currentToken = getAnonToken();
+            const payload = {
+              anonToken: currentToken,
+              turns: hydratedTurns,
+            };
+            localStorage.setItem(`arena_cache_${threadParam}`, JSON.stringify(payload));
           } catch {}
         }
       } catch (err) {
