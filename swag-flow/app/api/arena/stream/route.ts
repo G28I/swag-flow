@@ -307,7 +307,7 @@ export async function POST(req: NextRequest) {
           let buffer = "";
           startTime = performance.now();
           let lastFlushTime = performance.now();
-          let capturedUsageObj: Record<string, any> | null = null;
+          let capturedUsageObj: Record<string, unknown> | null = null;
 
           try {
             while (true) {
@@ -340,7 +340,7 @@ export async function POST(req: NextRequest) {
                     const parsedObj = parsed as {
                       error?: { message?: string };
                       choices?: Array<{ delta?: { content?: string } }>;
-                      usage?: Record<string, any>;
+                      usage?: Record<string, unknown>;
                     };
 
                     if (parsedObj.error) {
@@ -399,7 +399,7 @@ export async function POST(req: NextRequest) {
                   const parsedObj = parsed as {
                     error?: { message?: string };
                     choices?: Array<{ delta?: { content?: string } }>;
-                    usage?: Record<string, any>;
+                    usage?: Record<string, unknown>;
                   };
 
                   if (parsedObj.error) {

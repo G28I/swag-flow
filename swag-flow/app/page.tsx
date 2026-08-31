@@ -12,10 +12,7 @@ import HyperparameterDrawer, {
   Hyperparameters,
 } from "@/components/HyperparameterDrawer";
 import { getAnonToken } from "@/app/lib/anonToken";
-import {
-  getTurnComparisonInsights,
-  calculateEfficiencyMetrics,
-} from "@/app/lib/costEngine";
+import { getTurnComparisonInsights } from "@/app/lib/costEngine";
 import { SignInButton } from "@clerk/nextjs";
 import {
   ArrowUp,

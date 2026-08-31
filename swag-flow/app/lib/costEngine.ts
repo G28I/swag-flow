@@ -59,7 +59,7 @@ export interface TurnComparisonInsights {
  * Normalizes OpenRouter SSE usage payloads and fallback estimates into a uniform GenerationUsage object.
  */
 export function normalizeUsage(
-  rawUsage: Record<string, any> | null | undefined,
+  rawUsage: Record<string, unknown> | null | undefined,
   options: {
     modelRequested?: string;
     actualModelUsed?: string;
@@ -85,23 +85,37 @@ export function normalizeUsage(
     };
   }
 
-  const promptTokens = typeof rawUsage.prompt_tokens === "number" ? rawUsage.prompt_tokens : typeof rawUsage.promptTokens === "number" ? rawUsage.promptTokens : null;
-  const completionTokens = typeof rawUsage.completion_tokens === "number" ? rawUsage.completion_tokens : typeof rawUsage.completionTokens === "number" ? rawUsage.completionTokens : null;
-  const totalTokens = typeof rawUsage.total_tokens === "number" ? rawUsage.total_tokens : typeof rawUsage.totalTokens === "number" ? rawUsage.totalTokens : (promptTokens || 0) + (completionTokens || 0) || null;
+  const u = rawUsage as Record<string, unknown> & {
+    prompt_tokens?: number;
+    promptTokens?: number;
+    completion_tokens?: number;
+    completionTokens?: number;
+    total_tokens?: number;
+    totalTokens?: number;
+    reasoning_tokens?: number;
+    cost?: number;
+    costUsd?: number;
+    completion_tokens_details?: { reasoning_tokens?: number };
+    prompt_tokens_details?: { cached_tokens?: number };
+  };
 
-  const reasoningTokens = typeof rawUsage.reasoning_tokens === "number" ? rawUsage.reasoning_tokens : typeof rawUsage.completion_tokens_details?.reasoning_tokens === "number" ? rawUsage.completion_tokens_details.reasoning_tokens : null;
-  const cachedTokens = typeof rawUsage.prompt_tokens_details?.cached_tokens === "number" ? rawUsage.prompt_tokens_details.cached_tokens : null;
+  const promptTokens = typeof u.prompt_tokens === "number" ? u.prompt_tokens : typeof u.promptTokens === "number" ? u.promptTokens : null;
+  const completionTokens = typeof u.completion_tokens === "number" ? u.completion_tokens : typeof u.completionTokens === "number" ? u.completionTokens : null;
+  const totalTokens = typeof u.total_tokens === "number" ? u.total_tokens : typeof u.totalTokens === "number" ? u.totalTokens : (promptTokens || 0) + (completionTokens || 0) || null;
+
+  const reasoningTokens = typeof u.reasoning_tokens === "number" ? u.reasoning_tokens : typeof u.completion_tokens_details?.reasoning_tokens === "number" ? u.completion_tokens_details.reasoning_tokens : null;
+  const cachedTokens = typeof u.prompt_tokens_details?.cached_tokens === "number" ? u.prompt_tokens_details.cached_tokens : null;
 
   let costUsd: number | null = null;
   let costSource: "openrouter" | "calculated" | "estimated" | "unknown" = "unknown";
 
   const isFreeModel = (actualModelUsed || modelRequested || "").toLowerCase().includes(":free");
 
-  if (typeof rawUsage.cost === "number") {
-    costUsd = rawUsage.cost;
+  if (typeof u.cost === "number") {
+    costUsd = u.cost;
     costSource = "openrouter";
-  } else if (typeof rawUsage.costUsd === "number") {
-    costUsd = rawUsage.costUsd;
+  } else if (typeof u.costUsd === "number") {
+    costUsd = u.costUsd;
     costSource = "openrouter";
   } else if (isFreeModel) {
     costUsd = 0.0;

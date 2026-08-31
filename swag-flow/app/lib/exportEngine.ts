@@ -64,9 +64,9 @@ export function buildExportReport(params: {
     activeCount: number;
     models: Array<{ id: string; name: string }>;
     responses: {
-      modelA: { text: string; error: string | null; metrics: any; messageId: string | null; config?: any };
-      modelB: { text: string; error: string | null; metrics: any; messageId: string | null; config?: any };
-      modelC: { text: string; error: string | null; metrics: any; messageId: string | null; config?: any };
+      modelA: { text: string; error: string | null; metrics: unknown; messageId: string | null; config?: unknown };
+      modelB: { text: string; error: string | null; metrics: unknown; messageId: string | null; config?: unknown };
+      modelC: { text: string; error: string | null; metrics: unknown; messageId: string | null; config?: unknown };
     };
     promptId?: string;
   }>;
@@ -84,33 +84,35 @@ export function buildExportReport(params: {
     const responses: ExportModelResponse[] = turnItem.models.map((modelObj, mIdx) => {
       const slot = mIdx === 0 ? "modelA" : mIdx === 1 ? "modelB" : "modelC";
       const resp = turnItem.responses[slot];
+      const mObj = resp?.metrics as Record<string, unknown> | null | undefined;
+      const cObj = resp?.config as Record<string, unknown> | null | undefined;
       return {
         slot,
         modelId: modelObj.id,
         modelName: modelObj.name || modelObj.id,
         text: resp?.text || "",
         error: resp?.error || null,
-        metrics: resp?.metrics
+        metrics: mObj
           ? {
-              ttft: resp.metrics.ttft ?? null,
-              latency: resp.metrics.latency ?? null,
-              tokensPerSec: resp.metrics.tokensPerSec ?? null,
-              tokenCount: resp.metrics.tokenCount ?? null,
-              costUsd: resp.metrics.costUsd ?? null,
-              costSource: resp.metrics.costSource ?? null,
-              promptTokens: resp.metrics.promptTokens ?? null,
-              completionTokens: resp.metrics.completionTokens ?? null,
-              reasoningTokens: resp.metrics.reasoningTokens ?? null,
-              cachedTokens: resp.metrics.cachedTokens ?? null,
-              actualModel: resp.metrics.actualModel ?? null,
+              ttft: typeof mObj.ttft === "number" ? mObj.ttft : null,
+              latency: typeof mObj.latency === "number" ? mObj.latency : null,
+              tokensPerSec: typeof mObj.tokensPerSec === "number" ? mObj.tokensPerSec : null,
+              tokenCount: typeof mObj.tokenCount === "number" ? mObj.tokenCount : null,
+              costUsd: typeof mObj.costUsd === "number" ? mObj.costUsd : null,
+              costSource: typeof mObj.costSource === "string" ? mObj.costSource : null,
+              promptTokens: typeof mObj.promptTokens === "number" ? mObj.promptTokens : null,
+              completionTokens: typeof mObj.completionTokens === "number" ? mObj.completionTokens : null,
+              reasoningTokens: typeof mObj.reasoningTokens === "number" ? mObj.reasoningTokens : null,
+              cachedTokens: typeof mObj.cachedTokens === "number" ? mObj.cachedTokens : null,
+              actualModel: typeof mObj.actualModel === "string" ? mObj.actualModel : null,
             }
           : null,
-        config: resp?.config
+        config: cObj
           ? {
-              systemPrompt: resp.config.systemPrompt || null,
-              temperature: resp.config.temperature ?? null,
-              topP: resp.config.topP ?? null,
-              maxTokens: resp.config.maxTokens ?? null,
+              systemPrompt: typeof cObj.systemPrompt === "string" ? cObj.systemPrompt : null,
+              temperature: typeof cObj.temperature === "number" ? cObj.temperature : null,
+              topP: typeof cObj.topP === "number" ? cObj.topP : null,
+              maxTokens: typeof cObj.maxTokens === "number" ? cObj.maxTokens : null,
             }
           : null,
       };
