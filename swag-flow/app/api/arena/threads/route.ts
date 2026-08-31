@@ -45,6 +45,9 @@ export async function GET(req: NextRequest) {
       const thread = await prisma.thread.findUnique({
         where: { id: threadId },
         include: {
+          parentThread: {
+            select: { id: true, title: true },
+          },
           messages: {
             orderBy: { createdAt: "asc" },
           },

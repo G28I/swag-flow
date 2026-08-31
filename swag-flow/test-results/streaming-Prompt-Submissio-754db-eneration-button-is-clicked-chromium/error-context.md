@@ -22,9 +22,9 @@ Timeout:  5000ms
 Call log:
   - Expect "not toBeVisible" with timeout 5000ms
   - waiting for locator('button:has-text(\'Stop\'), button:has-text(\'Cancel\')').first()
-    10 × locator resolved to <button title="Stop streaming this response" class="px-2.5 py-1 rounded-lg bg-red-500/15 border border-red-500/30 text-red-400 hover:bg-red-500 hover:text-white text-[10px] font-bold flex items-center gap-1 transition-all cursor-pointer shadow-sm">…</button>
-       - unexpected value "visible"
-    3 × locator resolved to <button type="button" title="Stop all streaming models" class="px-3 py-1.5 rounded-lg bg-red-600 hover:bg-red-700 text-white text-xs font-bold transition-all shadow-md flex items-center gap-1.5 cursor-pointer">…</button>
+    6 × locator resolved to <button title="Stop streaming this response" class="px-2.5 py-1 rounded-lg bg-red-500/15 border border-red-500/30 text-red-400 hover:bg-red-500 hover:text-white text-[10px] font-bold flex items-center gap-1 transition-all cursor-pointer shadow-sm">…</button>
+      - unexpected value "visible"
+    8 × locator resolved to <button type="button" title="Stop all streaming models" class="px-3 py-1.5 rounded-lg bg-red-600 hover:bg-red-700 text-white text-xs font-bold transition-all shadow-md flex items-center gap-1.5 cursor-pointer">…</button>
       - unexpected value "visible"
 
 ```

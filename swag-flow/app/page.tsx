@@ -35,7 +35,9 @@ import {
   GitCompare,
   GitFork,
   SlidersHorizontal,
+  Download,
 } from "lucide-react";
+import { ExportModal } from "@/components/ExportModal";
 
 interface StreamMetrics {
   ttft: number;
@@ -154,6 +156,10 @@ function ArenaContent() {
   // Parent thread lineage info for branched threads
   const [parentThreadInfo, setParentThreadInfo] = useState<{ id: string; title: string } | null>(null);
 
+  // Multi-format export modal state
+  const [showExportModal, setShowExportModal] = useState(false);
+  const [exportTurnId, setExportTurnId] = useState<string | null>(null);
+
   // Initialize streams for up to 3 concurrent models
   const modelA = useModelStream();
   const modelB = useModelStream();
@@ -236,6 +242,11 @@ function ArenaContent() {
         setIsNotFound(false);
         setThreadTitle(data.title || "Swag-flow");
         setIsOwner(typeof data.isOwner === "boolean" ? data.isOwner : true);
+        if (data.parentThread) {
+          setParentThreadInfo({ id: data.parentThread.id, title: data.parentThread.title });
+        } else {
+          setParentThreadInfo(null);
+        }
 
         if (Array.isArray(data.messages)) {
           const userMessages = data.messages.filter((m: { role: string }) => m.role === "user");
@@ -1061,7 +1072,7 @@ function ArenaContent() {
     <AppShell breadcrumb={threadTitle}>
       <div className="flex-1 flex flex-col min-h-0 relative bg-background w-full overflow-hidden">
         {/* Top Thread Subheader Bar */}
-        {threadId && !isNotFound && (
+        {(threadId || activeTurns.length > 0) && !isNotFound && (
           <div className="px-6 py-2.5 border-b border-border-custom/50 bg-card-bg/20 flex items-center justify-between shrink-0">
             <div className="flex items-center gap-2">
               <span className="text-xs font-bold text-foreground/80 truncate max-w-xs md:max-w-md">
@@ -1073,23 +1084,38 @@ function ArenaContent() {
                 </span>
               )}
             </div>
-            <button
-              onClick={handleShare}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-border-custom bg-card-bg/80 hover:bg-card-bg text-xs font-semibold text-foreground/80 hover:text-foreground transition-all cursor-pointer shadow-sm"
-              title="Share this thread"
-            >
-              {copied ? (
-                <>
-                  <Check size={14} className="text-emerald-500" />
-                  <span className="text-emerald-500 font-bold">Link Copied!</span>
-                </>
-              ) : (
-                <>
-                  <Share2 size={14} />
-                  <span>Share</span>
-                </>
-              )}
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => {
+                  setExportTurnId(null);
+                  setShowExportModal(true);
+                }}
+                disabled={activeTurns.length === 0}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-border-custom bg-card-bg/80 hover:bg-accent/15 hover:text-accent disabled:opacity-40 text-xs font-bold transition-all cursor-pointer shadow-sm disabled:cursor-not-allowed"
+                title="Export full comparison report into Markdown, JSON, or PDF"
+              >
+                <Download size={14} />
+                <span>Export Report</span>
+              </button>
+
+              <button
+                onClick={handleShare}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-border-custom bg-card-bg/80 hover:bg-card-bg text-xs font-semibold text-foreground/80 hover:text-foreground transition-all cursor-pointer shadow-sm"
+                title="Share this thread"
+              >
+                {copied ? (
+                  <>
+                    <Check size={14} className="text-emerald-500" />
+                    <span className="text-emerald-500 font-bold">Link Copied!</span>
+                  </>
+                ) : (
+                  <>
+                    <Share2 size={14} />
+                    <span>Share</span>
+                  </>
+                )}
+              </button>
+            </div>
           </div>
         )}
 
@@ -1189,8 +1215,20 @@ function ArenaContent() {
                     <div key={turn.id} className="flex flex-col gap-6 w-full mx-auto">
                       {/* User Message Bubble with Editing & Version Controls */}
                       <div className="flex flex-col items-end max-w-7xl mx-auto w-full gap-1.5 group/prompt">
-                        {/* Prompt Action Toolbar (Fork Branch & Version Switcher) */}
+                        {/* Prompt Action Toolbar (Export Turn, Fork Branch & Version Switcher) */}
                         <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => {
+                              setExportTurnId(turn.id);
+                              setShowExportModal(true);
+                            }}
+                            className="px-2.5 py-1 rounded-xl bg-card-bg/90 hover:bg-accent/15 hover:text-accent border border-border-custom text-[10px] font-bold text-muted-foreground flex items-center gap-1.5 transition-all cursor-pointer shadow-sm"
+                            title="Export this turn into Markdown, JSON, or PDF"
+                          >
+                            <Download size={12} />
+                            <span>Export Turn</span>
+                          </button>
+
                           <button
                             onClick={() => handleForkThread(turn.promptId)}
                             className="px-2.5 py-1 rounded-xl bg-card-bg/90 hover:bg-accent/15 hover:text-accent border border-border-custom text-[10px] font-bold text-muted-foreground flex items-center gap-1.5 transition-all cursor-pointer shadow-sm"
@@ -1607,8 +1645,18 @@ function ArenaContent() {
             </div>
           </>
         )}
-      </div>
-    </AppShell>
+
+        {/* Multi-Format Export Modal */}
+        <ExportModal
+          isOpen={showExportModal}
+          onClose={() => setShowExportModal(false)}
+          threadId={threadId || "current"}
+          threadTitle={threadTitle}
+          turns={activeTurns}
+          initialTurnId={exportTurnId}
+        />
+          </div>
+        </AppShell>
   );
 }
 
