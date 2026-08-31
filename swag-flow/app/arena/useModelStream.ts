@@ -194,23 +194,23 @@ export function useModelStream() {
               const dataStr = cleanedLine.slice(6).trim();
               try {
                 const event = JSON.parse(dataStr);
+
+                // Controller ownership guard: ignore late events if this stream has been superseded
+                if (abortRef.current !== controller) {
+                  break;
+                }
+
                 if (event.type === "meta") {
-                  if (abortRef.current === controller) {
-                    setMessageId(event.messageId);
-                  }
+                  setMessageId(event.messageId);
                   snapshotMessageId = event.messageId;
                 } else if (event.type === "fallback") {
-                  if (abortRef.current === controller) {
-                    setFallbackModel(event.fallbackModel);
-                  }
+                  setFallbackModel(event.fallbackModel);
                   snapshotFallbackModel = event.fallbackModel;
                 } else if (event.type === "token") {
-                  // Accumulate in buffer and snapshot, schedule RAF flush if active controller
+                  // Accumulate in buffer and snapshot, schedule RAF flush
                   accumulatedTextRef.current += event.text;
-                  if (abortRef.current === controller) {
-                    textBufferRef.current += event.text;
-                    scheduleFlush();
-                  }
+                  textBufferRef.current += event.text;
+                  scheduleFlush();
                   snapshotText += event.text;
                 } else if (event.type === "done") {
                   if (watchdogRef.id) clearTimeout(watchdogRef.id);
@@ -228,26 +228,22 @@ export function useModelStream() {
                     actualModel: event.usage?.actualModel ?? null,
                   };
                   snapshotMetrics = finalM;
-                  if (abortRef.current === controller) {
-                    if (textBufferRef.current) {
-                      const remaining = textBufferRef.current;
-                      textBufferRef.current = "";
-                      setText((prev) => prev + remaining);
-                    }
-                    if (rafIdRef.current !== null) {
-                      cancelAnimationFrame(rafIdRef.current);
-                      rafIdRef.current = null;
-                    }
-                    setMetrics(finalM);
-                    setIsStreaming(false);
+                  if (textBufferRef.current) {
+                    const remaining = textBufferRef.current;
+                    textBufferRef.current = "";
+                    setText((prev) => prev + remaining);
                   }
+                  if (rafIdRef.current !== null) {
+                    cancelAnimationFrame(rafIdRef.current);
+                    rafIdRef.current = null;
+                  }
+                  setMetrics(finalM);
+                  setIsStreaming(false);
                 } else if (event.type === "error") {
                   if (watchdogRef.id) clearTimeout(watchdogRef.id);
                   snapshotError = event.message || "Model provider error";
-                  if (abortRef.current === controller) {
-                    setError(snapshotError);
-                    setIsStreaming(false);
-                  }
+                  setError(snapshotError);
+                  setIsStreaming(false);
                 }
               } catch {
                 // Ignore JSON parsing errors for incomplete SSE chunks
