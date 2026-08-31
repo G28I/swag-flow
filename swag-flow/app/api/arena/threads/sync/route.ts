@@ -39,11 +39,14 @@ export async function POST(req: NextRequest) {
     }
 
     const cleanAnonToken = anonToken.trim();
+    const expectedAnonOwner = cleanAnonToken.startsWith("anon_")
+      ? cleanAnonToken
+      : `anon_${cleanAnonToken}`;
 
     // Strict ownership transfer predicate:
     // Threads can ONLY be claimed if their stored userId matches the specific client session token `anon_<token>`
     const validUserIdFilter: ({ userId: string })[] = [
-      { userId: `anon_${cleanAnonToken}` },
+      { userId: expectedAnonOwner },
     ];
 
     if (process.env.NODE_ENV === "development") {

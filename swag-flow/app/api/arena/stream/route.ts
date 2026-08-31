@@ -90,12 +90,19 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Thread not found" }, { status: 404 });
     }
 
+    const normalizedAnon = anonToken && typeof anonToken === "string" ? anonToken.trim() : "";
+    const expectedAnonOwner = normalizedAnon
+      ? normalizedAnon.startsWith("anon_")
+        ? normalizedAnon
+        : `anon_${normalizedAnon}`
+      : "";
+
     const isOwner =
       Boolean(userId && thread.userId === userId) ||
       Boolean(
-        anonToken &&
-          typeof anonToken === "string" &&
-          thread.userId === `anon_${anonToken.trim()}`
+        normalizedAnon &&
+          thread.userId.startsWith("anon_") &&
+          thread.userId === expectedAnonOwner
       ) ||
       (process.env.NODE_ENV === "development" && thread.userId === "mock_user_123");
 
