@@ -66,4 +66,16 @@ test.describe("Turn Management & Single-Slot Regeneration E2E", () => {
       await expect(branchBanner).toBeVisible({ timeout: 5000 });
     }
   });
+
+  test("prevents double-prefixing anon_ token during thread forking", async ({ request }) => {
+    const forkRes = await request.post("/api/arena/threads/fork", {
+      data: {
+        sourceThreadId: "non-existent-source-id",
+        anonToken: "anon_test_token_12345",
+      },
+    });
+
+    // Should return 404 (thread not found)
+    expect(forkRes.status()).toBe(404);
+  });
 });

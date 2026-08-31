@@ -62,8 +62,13 @@ export async function POST(req: NextRequest) {
     // 4. Create thread if not provided
     if (!targetThreadId) {
       const title = prompt.length > 40 ? prompt.substring(0, 40) + "..." : prompt;
-      // If user is unauthenticated and provides an anonToken, bind thread to anon_<anonToken>
-      const ownerId = !userId && anonToken && typeof anonToken === "string" ? `anon_${anonToken}` : effectiveUserId;
+      const normalizedAnon = anonToken && typeof anonToken === "string" ? anonToken.trim() : "";
+      const expectedAnonOwner = normalizedAnon
+        ? normalizedAnon.startsWith("anon_")
+          ? normalizedAnon
+          : `anon_${normalizedAnon}`
+        : "";
+      const ownerId = !userId && normalizedAnon ? expectedAnonOwner : effectiveUserId;
       const thread = await prisma.thread.create({
         data: {
           title,

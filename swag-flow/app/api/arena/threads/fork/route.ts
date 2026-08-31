@@ -88,10 +88,7 @@ export async function POST(req: NextRequest) {
       ? sourceThread.title
       : `Fork of ${sourceThread.title}`;
 
-    const ownerId =
-      !userId && anonToken && typeof anonToken === "string"
-        ? `anon_${anonToken.trim()}`
-        : effectiveUserId;
+    const ownerId = !userId && normalizedAnonToken ? expectedAnonOwner : effectiveUserId;
 
     const newThread = await prisma.thread.create({
       data: {
