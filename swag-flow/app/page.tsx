@@ -33,6 +33,7 @@ import {
   ThumbsUp,
   Copy,
   GitCompare,
+  GitFork,
   SlidersHorizontal,
 } from "lucide-react";
 
@@ -149,6 +150,9 @@ function ArenaContent() {
   // Generation Hyperparameters state
   const [hyperparameters, setHyperparameters] = useState<Hyperparameters>(DEFAULT_HYPERPARAMETERS);
   const [showHyperparameterDrawer, setShowHyperparameterDrawer] = useState(false);
+
+  // Parent thread lineage info for branched threads
+  const [parentThreadInfo, setParentThreadInfo] = useState<{ id: string; title: string } | null>(null);
 
   // Initialize streams for up to 3 concurrent models
   const modelA = useModelStream();
@@ -737,6 +741,40 @@ function ArenaContent() {
     setActiveModels((prev) => [...prev, model]);
   };
 
+  const handleForkThread = async (upToPromptId?: string) => {
+    if (!threadId) return;
+    try {
+      const anonToken = getAnonToken();
+      const res = await fetch("/api/arena/threads/fork", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-anon-token": anonToken,
+        },
+        body: JSON.stringify({
+          sourceThreadId: threadId,
+          upToTurnPromptId: upToPromptId,
+          anonToken,
+        }),
+      });
+
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.error || "Failed to fork conversation thread");
+      }
+
+      const data = await res.json();
+      setThreadId(data.threadId);
+      setParentThreadInfo({ id: data.parentThreadId, title: data.parentTitle });
+      if (typeof window !== "undefined") {
+        window.history.pushState(null, "", `/?thread=${data.threadId}`);
+        window.dispatchEvent(new Event("swag_flow_threads_updated"));
+      }
+    } catch (err: unknown) {
+      console.error("Fork thread error:", err);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!prompt.trim() || isSubmitting || activeModels.length === 0) return;
@@ -1093,6 +1131,35 @@ function ArenaContent() {
           <>
             {/* Scrollable Chat Area */}
             <div className="flex-1 overflow-y-auto px-6 py-8 space-y-8 pb-80 sm:pb-96 scrollbar-thin">
+              {/* Parent Thread Lineage Banner for Branched Threads */}
+              {parentThreadInfo && (
+                <div className="max-w-7xl mx-auto w-full mb-2 px-4 py-2.5 rounded-2xl bg-card-bg/80 border border-border-custom flex items-center justify-between gap-3 text-xs shadow-sm">
+                  <div className="flex items-center gap-2 font-bold text-foreground">
+                    <span className="w-6 h-6 rounded-lg bg-accent/15 text-accent flex items-center justify-center font-bold">
+                      <GitFork size={13} />
+                    </span>
+                    <span>
+                      Branched from:{" "}
+                      <button
+                        onClick={() => {
+                          setThreadId(parentThreadInfo.id);
+                          setParentThreadInfo(null);
+                          if (typeof window !== "undefined") {
+                            window.history.pushState(null, "", `/?thread=${parentThreadInfo.id}`);
+                          }
+                        }}
+                        className="text-accent underline hover:text-accent-hover font-extrabold cursor-pointer"
+                      >
+                        {parentThreadInfo.title}
+                      </button>
+                    </span>
+                  </div>
+                  <span className="text-[10px] text-muted-foreground font-semibold px-2 py-0.5 rounded-full bg-muted/40">
+                    Independent Branch
+                  </span>
+                </div>
+              )}
+
               {activeTurns.length === 0 ? (
                 /* Empty State */
                 <div className="max-w-2xl mx-auto text-center py-20 flex flex-col items-center gap-4">
@@ -1122,44 +1189,55 @@ function ArenaContent() {
                     <div key={turn.id} className="flex flex-col gap-6 w-full mx-auto">
                       {/* User Message Bubble with Editing & Version Controls */}
                       <div className="flex flex-col items-end max-w-7xl mx-auto w-full gap-1.5 group/prompt">
-                        {/* Version Switcher Controls */}
-                        {turnVersionsMap[turn.id] && turnVersionsMap[turn.id].length > 1 && (
-                          <div className="flex items-center gap-1.5 bg-card-bg/90 border border-border-custom px-2.5 py-1 rounded-xl text-[10px] font-bold text-muted-foreground shadow-sm">
-                            <button
-                              onClick={() =>
-                                handleSwitchVersion(
-                                  turn.id,
-                                  (activeVersionIndexMap[turn.id] || 0) - 1
-                                )
-                              }
-                              disabled={(activeVersionIndexMap[turn.id] || 0) <= 0}
-                              className="hover:text-accent disabled:opacity-30 cursor-pointer disabled:cursor-default transition-colors"
-                              title="Previous prompt version"
-                            >
-                              <ChevronLeft size={13} />
-                            </button>
-                            <span>
-                              Version {(activeVersionIndexMap[turn.id] || 0) + 1} of{" "}
-                              {turnVersionsMap[turn.id].length}
-                            </span>
-                            <button
-                              onClick={() =>
-                                handleSwitchVersion(
-                                  turn.id,
-                                  (activeVersionIndexMap[turn.id] || 0) + 1
-                                )
-                              }
-                              disabled={
-                                (activeVersionIndexMap[turn.id] || 0) >=
-                                turnVersionsMap[turn.id].length - 1
-                              }
-                              className="hover:text-accent disabled:opacity-30 cursor-pointer disabled:cursor-default transition-colors"
-                              title="Next prompt version"
-                            >
-                              <ChevronRight size={13} />
-                            </button>
-                          </div>
-                        )}
+                        {/* Prompt Action Toolbar (Fork Branch & Version Switcher) */}
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => handleForkThread(turn.promptId)}
+                            className="px-2.5 py-1 rounded-xl bg-card-bg/90 hover:bg-accent/15 hover:text-accent border border-border-custom text-[10px] font-bold text-muted-foreground flex items-center gap-1.5 transition-all cursor-pointer shadow-sm"
+                            title="Fork conversation into a new thread branch from this turn"
+                          >
+                            <GitFork size={12} />
+                            <span>Fork Branch</span>
+                          </button>
+
+                          {turnVersionsMap[turn.id] && turnVersionsMap[turn.id].length > 1 && (
+                            <div className="flex items-center gap-1.5 bg-card-bg/90 border border-border-custom px-2.5 py-1 rounded-xl text-[10px] font-bold text-muted-foreground shadow-sm">
+                              <button
+                                onClick={() =>
+                                  handleSwitchVersion(
+                                    turn.id,
+                                    (activeVersionIndexMap[turn.id] || 0) - 1
+                                  )
+                                }
+                                disabled={(activeVersionIndexMap[turn.id] || 0) <= 0}
+                                className="hover:text-accent disabled:opacity-30 cursor-pointer disabled:cursor-default transition-colors"
+                                title="Previous prompt version"
+                              >
+                                <ChevronLeft size={13} />
+                              </button>
+                              <span>
+                                Version {(activeVersionIndexMap[turn.id] || 0) + 1} of{" "}
+                                {turnVersionsMap[turn.id].length}
+                              </span>
+                              <button
+                                onClick={() =>
+                                  handleSwitchVersion(
+                                    turn.id,
+                                    (activeVersionIndexMap[turn.id] || 0) + 1
+                                  )
+                                }
+                                disabled={
+                                  (activeVersionIndexMap[turn.id] || 0) >=
+                                  turnVersionsMap[turn.id].length - 1
+                                }
+                                className="hover:text-accent disabled:opacity-30 cursor-pointer disabled:cursor-default transition-colors"
+                                title="Next prompt version"
+                              >
+                                <ChevronRight size={13} />
+                              </button>
+                            </div>
+                          )}
+                        </div>
 
                         {/* Prompt Bubble / Inline Editor */}
                         {editingTurnId === turn.id ? (

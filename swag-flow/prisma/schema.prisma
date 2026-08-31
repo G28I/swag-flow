@@ -10,15 +10,19 @@ datasource db {
 }
 
 model Thread {
-  id        String    @id @default(uuid())
-  title     String    @default("New Thread")
-  userId    String // Clerk user ID
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-  messages  Message[]
-  votes     Vote[]
+  id             String    @id @default(uuid())
+  title          String    @default("New Thread")
+  userId         String // Clerk user ID
+  parentThreadId String? // Optional parent thread if branched
+  parentThread   Thread?   @relation("ThreadBranches", fields: [parentThreadId], references: [id], onDelete: SetNull)
+  branches       Thread[]  @relation("ThreadBranches")
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  messages       Message[]
+  votes          Vote[]
 
   @@index([userId])
+  @@index([parentThreadId])
 }
 
 model Message {

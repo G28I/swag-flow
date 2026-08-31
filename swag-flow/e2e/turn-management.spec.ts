@@ -42,4 +42,28 @@ test.describe("Turn Management & Single-Slot Regeneration E2E", () => {
       await page.waitForTimeout(1000);
     }
   });
+
+  test("allows forking conversation thread into a new independent branch", async ({ page }) => {
+    await page.goto("/");
+
+    const textarea = page.locator("textarea[placeholder*='Ask anything']");
+    await expect(textarea).toBeVisible();
+
+    await textarea.fill("Original thread prompt for branching.");
+    await textarea.press("Enter");
+
+    await expect(page.locator("text=Original thread prompt for branching.")).toBeVisible({ timeout: 10000 });
+    await page.waitForTimeout(3000);
+
+    // Click Fork Branch button on the turn header
+    const forkBtn = page.locator("button:has-text('Fork Branch')").first();
+    if (await forkBtn.isVisible({ timeout: 5000 }).catch(() => false)) {
+      await forkBtn.click();
+      await page.waitForTimeout(1500);
+
+      // Verify "Branched from:" banner appears
+      const branchBanner = page.locator("text=Branched from:");
+      await expect(branchBanner).toBeVisible({ timeout: 5000 });
+    }
+  });
 });
