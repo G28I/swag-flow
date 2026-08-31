@@ -669,18 +669,60 @@ function ArenaContent() {
       }
     }
 
-    // Abort active network stream and flush current response for target slot before switching target turn
-    const targetHook = slot === "modelA" ? modelA : slot === "modelB" ? modelB : modelC;
-    let flushedText = "";
-    if (streamingTurnId === turnId || targetHook.isStreaming) {
-      flushedText = targetHook.abort();
-    }
+    // 1. If currently streaming on a DIFFERENT turn, flush and persist ALL active streams to that originating turn
+    if (streamingTurnId && streamingTurnId !== turnId) {
+      const prevTurnId = streamingTurnId;
 
-    if (streamingTurnId) {
-      const activeTurnId = streamingTurnId;
+      const flushedA = modelA.isStreaming ? modelA.abort() : modelA.text;
+      const flushedB = modelB.isStreaming ? modelB.abort() : modelB.text;
+      const flushedC = modelC.isStreaming ? modelC.abort() : modelC.text;
+
       setTurns((prev) =>
         prev.map((t) => {
-          if (t.id !== activeTurnId) return t;
+          if (t.id !== prevTurnId) return t;
+          return {
+            ...t,
+            responses: {
+              modelA: {
+                ...t.responses.modelA,
+                text: flushedA || modelA.text || t.responses.modelA.text,
+                error: modelA.error || t.responses.modelA.error,
+                metrics: modelA.metrics || t.responses.modelA.metrics,
+                isStreaming: false,
+                messageId: modelA.messageId || t.responses.modelA.messageId,
+              },
+              modelB: {
+                ...t.responses.modelB,
+                text: flushedB || modelB.text || t.responses.modelB.text,
+                error: modelB.error || t.responses.modelB.error,
+                metrics: modelB.metrics || t.responses.modelB.metrics,
+                isStreaming: false,
+                messageId: modelB.messageId || t.responses.modelB.messageId,
+              },
+              modelC: {
+                ...t.responses.modelC,
+                text: flushedC || modelC.text || t.responses.modelC.text,
+                error: modelC.error || t.responses.modelC.error,
+                metrics: modelC.metrics || t.responses.modelC.metrics,
+                isStreaming: false,
+                messageId: modelC.messageId || t.responses.modelC.messageId,
+              },
+            },
+          };
+        })
+      );
+
+      modelA.reset();
+      modelB.reset();
+      modelC.reset();
+    } else if (streamingTurnId === turnId) {
+      // Same turn regeneration: abort and flush only target slot hook
+      const targetHook = slot === "modelA" ? modelA : slot === "modelB" ? modelB : modelC;
+      const flushedText = targetHook.isStreaming ? targetHook.abort() : targetHook.text;
+
+      setTurns((prev) =>
+        prev.map((t) => {
+          if (t.id !== turnId) return t;
           return {
             ...t,
             responses: {

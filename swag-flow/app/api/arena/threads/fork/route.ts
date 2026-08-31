@@ -47,13 +47,12 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Source thread not found" }, { status: 404 });
     }
 
+    const normalizedAnonToken = anonToken && typeof anonToken === "string" ? anonToken.trim() : "";
+    const expectedAnonOwner = normalizedAnonToken.startsWith("anon_") ? normalizedAnonToken : `anon_${normalizedAnonToken}`;
+
     const isOwner =
       Boolean(userId && sourceThread.userId === userId) ||
-      Boolean(
-        anonToken &&
-          typeof anonToken === "string" &&
-          sourceThread.userId === `anon_${anonToken.trim()}`
-      ) ||
+      Boolean(normalizedAnonToken && (sourceThread.userId === normalizedAnonToken || sourceThread.userId === expectedAnonOwner)) ||
       (process.env.NODE_ENV === "development" && sourceThread.userId === "mock_user_123");
 
     if (!isOwner) {
