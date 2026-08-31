@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect } from "react";
 import { SlidersHorizontal, RotateCcw, X, Sparkles } from "lucide-react";
 
 export interface Hyperparameters {
@@ -46,14 +47,31 @@ export default function HyperparameterDrawer({
   onChange,
   onClose,
 }: HyperparameterDrawerProps) {
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        onClose();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [onClose]);
+
   const handleReset = () => {
     onChange(DEFAULT_HYPERPARAMETERS);
   };
 
   return (
-    <div className="p-5 rounded-2xl bg-card-bg/95 border border-border-custom shadow-2xl backdrop-blur-md animate-in fade-in slide-in-from-bottom-2 duration-300 w-full max-w-xl mx-auto mb-4">
-      {/* Drawer Header */}
-      <div className="flex items-center justify-between pb-3.5 mb-4 border-b border-border-custom/50">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200"
+      onClick={onClose}
+    >
+      <div
+        className="p-5 rounded-2xl bg-card-bg border border-border-custom shadow-2xl animate-in zoom-in-95 duration-200 w-full max-w-xl max-h-[90vh] overflow-y-auto"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Drawer Header */}
+        <div className="flex items-center justify-between pb-3.5 mb-4 border-b border-border-custom/50">
         <div className="flex items-center gap-2.5">
           <div className="w-8 h-8 rounded-xl bg-accent/15 text-accent flex items-center justify-center font-bold">
             <SlidersHorizontal size={16} />
@@ -200,5 +218,6 @@ export default function HyperparameterDrawer({
         </div>
       </div>
     </div>
-  );
+  </div>
+);
 }
