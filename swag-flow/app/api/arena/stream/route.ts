@@ -211,8 +211,6 @@ export async function POST(req: NextRequest) {
 
           for (const currentTryModel of modelsToTry) {
             clearInactivityTimeout();
-            activeAbortController = new AbortController();
-            resetInactivityTimeout();
 
             try {
               const fetchStart = performance.now();
@@ -235,6 +233,11 @@ export async function POST(req: NextRequest) {
 
               response = await executeWithRetryAndBackoff(
                 async () => {
+                  // Clear previous watchdog timer and create fresh AbortController for this fetch attempt
+                  clearInactivityTimeout();
+                  activeAbortController = new AbortController();
+                  resetInactivityTimeout();
+
                   return await fetch("https://openrouter.ai/api/v1/chat/completions", {
                     method: "POST",
                     headers: {
@@ -244,7 +247,7 @@ export async function POST(req: NextRequest) {
                       "X-Title": "Swag-flow",
                     },
                     body: JSON.stringify(openRouterPayload),
-                    signal: activeAbortController?.signal,
+                    signal: activeAbortController.signal,
                   });
                 },
                 {
@@ -254,6 +257,10 @@ export async function POST(req: NextRequest) {
                   cooldownKey: getCooldownKey("openrouter", currentTryModel),
                   signal: req.signal,
                   streamStarted: false,
+                  onBackoff: () => {
+                    // Suspend model watchdog while sleeping between retries so provider-directed rate limit wait is never poisoned
+                    clearInactivityTimeout();
+                  },
                 }
               );
 

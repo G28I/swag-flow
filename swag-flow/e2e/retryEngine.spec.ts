@@ -108,4 +108,34 @@ test.describe("OpenRouter Rate-Limit Retry Engine Specifications", () => {
       })
     ).rejects.toThrow("Rate limit 429 received after stream body consumption started");
   });
+
+  test("Phase 11: Watchdog suspension on backoff triggers onBackoff callback", async () => {
+    let attempts = 0;
+    let backoffCalled = false;
+
+    const action = async () => {
+      attempts++;
+      if (attempts === 1) {
+        return new Response(JSON.stringify({ error: "rate limit" }), {
+          status: 429,
+          headers: { "retry-after": "0" },
+        });
+      }
+      return new Response(JSON.stringify({ ok: true }), { status: 200 });
+    };
+
+    const res = await executeWithRetryAndBackoff(action, {
+      maxRetries: 3,
+      baseDelayMs: 1,
+      maxDelayMs: 5,
+      cooldownKey: "openrouter:test-watchdog",
+      onBackoff: () => {
+        backoffCalled = true;
+      },
+    });
+
+    expect(attempts).toBe(2);
+    expect(backoffCalled).toBe(true);
+    expect(res.status).toBe(200);
+  });
 });

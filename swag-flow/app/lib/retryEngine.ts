@@ -195,6 +195,7 @@ export interface ExecuteRetryOptions extends RetryConfig {
   cooldownKey?: string;
   signal?: AbortSignal;
   streamStarted?: boolean; // Streaming safety flag: true if body bytes have already been consumed
+  onBackoff?: (attempt: number, delayMs: number) => void;
 }
 
 /**
@@ -214,6 +215,7 @@ export async function executeWithRetryAndBackoff<T>(
     cooldownKey,
     signal,
     streamStarted = false,
+    onBackoff,
   } = options;
 
   // 1. Check if provider/model is already on cooldown
@@ -269,6 +271,10 @@ export async function executeWithRetryAndBackoff<T>(
               serverRetryAfterMs !== null && serverRetryAfterMs > 0
                 ? Math.min(maxDelayMs, serverRetryAfterMs)
                 : calculateJitteredBackoff(attempt, baseDelayMs, maxDelayMs, randomFn);
+
+            if (onBackoff) {
+              onBackoff(attempt, delayMs);
+            }
 
             // Cancellation-aware wait
             await delayWithAbort(delayMs, signal);
