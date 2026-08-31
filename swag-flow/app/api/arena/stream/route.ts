@@ -4,6 +4,7 @@ import prisma from "@/app/lib/prisma";
 import { aj } from "@/app/lib/arcjet";
 import { logStatsigEvent } from "@/app/lib/statsig";
 import { env } from "@/app/lib/env";
+import { executeWithRetryAndBackoff } from "@/app/lib/retryEngine";
 
 function safeEnqueue(
   controller: ReadableStreamDefaultController,
@@ -208,59 +209,59 @@ export async function POST(req: NextRequest) {
           let modelsToTry = [model, ...FALLBACK_CASCADE.filter((m) => m !== model)];
 
           for (const currentTryModel of modelsToTry) {
-            let attempts = 0;
-            while (attempts < 2) {
-              attempts++;
-              clearInactivityTimeout();
-              activeAbortController = new AbortController();
+            clearInactivityTimeout();
+            activeAbortController = new AbortController();
+            resetInactivityTimeout();
 
-              // 15 seconds allowed for first byte or chunk response
-              resetInactivityTimeout();
+            try {
+              const fetchStart = performance.now();
+              const openRouterPayload: Record<string, unknown> = {
+                model: currentTryModel,
+                messages: messagesToStream,
+                stream: true,
+              };
 
-              try {
-                const fetchStart = performance.now();
-                const openRouterPayload: Record<string, unknown> = {
-                  model: currentTryModel,
-                  messages: messagesToStream,
-                  stream: true,
-                };
-
-                if (typeof effectiveTemperature === "number" && !isNaN(effectiveTemperature)) {
-                  openRouterPayload.temperature = Math.max(0, Math.min(2, effectiveTemperature));
-                }
-                if (typeof effectiveTopP === "number" && !isNaN(effectiveTopP)) {
-                  openRouterPayload.top_p = Math.max(0, Math.min(1, effectiveTopP));
-                }
-                if (typeof effectiveMaxTokens === "number" && !isNaN(effectiveMaxTokens)) {
-                  openRouterPayload.max_tokens = Math.max(1, Math.min(8192, effectiveMaxTokens));
-                }
-
-                response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-                  method: "POST",
-                  headers: {
-                    Authorization: `Bearer ${env.OPENROUTER_API_KEY}`,
-                    "Content-Type": "application/json",
-                    "HTTP-Referer": "http://localhost:3000",
-                    "X-Title": "Swag-flow",
-                  },
-                  body: JSON.stringify(openRouterPayload),
-                  signal: activeAbortController.signal,
-                });
-                openRouterConnectMs = performance.now() - fetchStart;
-
-                if (response.status === 429 && attempts < 2) {
-                  await new Promise((res) => setTimeout(res, 300));
-                  continue;
-                }
-              } catch (fetchErr) {
-                console.warn(`Fetch error for ${currentTryModel}:`, fetchErr);
+              if (typeof effectiveTemperature === "number" && !isNaN(effectiveTemperature)) {
+                openRouterPayload.temperature = Math.max(0, Math.min(2, effectiveTemperature));
               }
-              break;
-            }
+              if (typeof effectiveTopP === "number" && !isNaN(effectiveTopP)) {
+                openRouterPayload.top_p = Math.max(0, Math.min(1, effectiveTopP));
+              }
+              if (typeof effectiveMaxTokens === "number" && !isNaN(effectiveMaxTokens)) {
+                openRouterPayload.max_tokens = Math.max(1, Math.min(8192, effectiveMaxTokens));
+              }
 
-            if (response && response.ok) {
-              activeModel = currentTryModel;
-              break;
+              response = await executeWithRetryAndBackoff(
+                async () => {
+                  return await fetch("https://openrouter.ai/api/v1/chat/completions", {
+                    method: "POST",
+                    headers: {
+                      Authorization: `Bearer ${env.OPENROUTER_API_KEY}`,
+                      "Content-Type": "application/json",
+                      "HTTP-Referer": "http://localhost:3000",
+                      "X-Title": "Swag-flow",
+                    },
+                    body: JSON.stringify(openRouterPayload),
+                    signal: activeAbortController?.signal,
+                  });
+                },
+                {
+                  maxRetries: 3,
+                  baseDelayMs: 500,
+                  maxDelayMs: 8000,
+                  modelId: currentTryModel,
+                  signal: req.signal,
+                }
+              );
+
+              openRouterConnectMs = performance.now() - fetchStart;
+
+              if (response && response.ok) {
+                activeModel = currentTryModel;
+                break;
+              }
+            } catch (fetchErr) {
+              console.warn(`Fetch attempt failed for ${currentTryModel}:`, fetchErr);
             }
           }
 
