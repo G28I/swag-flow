@@ -82,4 +82,16 @@ test.describe("Security, IDOR Protection & Cache Purge E2E", () => {
     const cachedItem = await page.evaluate(() => localStorage.getItem("arena_cache_unauthorized_thread_xyz"));
     expect(cachedItem).toBeNull();
   });
+
+  test("prevents anonymous token impersonation of Clerk user ID during thread fork", async ({ request }) => {
+    const response = await request.post("/api/arena/threads/fork", {
+      data: {
+        sourceThreadId: "clerk-user-private-thread-id",
+        anonToken: "user_2bX9kL9999999999999", // Impersonation attempt using a raw Clerk user ID string
+      },
+    });
+
+    // Should return 403 or 404 (authorization failure) and NEVER 200
+    expect([403, 404]).toContain(response.status());
+  });
 });

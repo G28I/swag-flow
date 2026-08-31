@@ -48,11 +48,19 @@ export async function POST(req: NextRequest) {
     }
 
     const normalizedAnonToken = anonToken && typeof anonToken === "string" ? anonToken.trim() : "";
-    const expectedAnonOwner = normalizedAnonToken.startsWith("anon_") ? normalizedAnonToken : `anon_${normalizedAnonToken}`;
+    const expectedAnonOwner = normalizedAnonToken
+      ? normalizedAnonToken.startsWith("anon_")
+        ? normalizedAnonToken
+        : `anon_${normalizedAnonToken}`
+      : "";
 
     const isOwner =
       Boolean(userId && sourceThread.userId === userId) ||
-      Boolean(normalizedAnonToken && (sourceThread.userId === normalizedAnonToken || sourceThread.userId === expectedAnonOwner)) ||
+      Boolean(
+        normalizedAnonToken &&
+          sourceThread.userId.startsWith("anon_") &&
+          sourceThread.userId === expectedAnonOwner
+      ) ||
       (process.env.NODE_ENV === "development" && sourceThread.userId === "mock_user_123");
 
     if (!isOwner) {
