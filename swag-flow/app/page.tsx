@@ -6,6 +6,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { useModelStream } from "./arena/useModelStream";
 import AppShell from "@/components/AppShell";
+import DiffViewer from "@/components/DiffViewer";
 import { getAnonToken } from "@/app/lib/anonToken";
 import { SignInButton } from "@clerk/nextjs";
 import {
@@ -27,6 +28,7 @@ import {
   ChevronRight,
   ThumbsUp,
   Copy,
+  GitCompare,
 } from "lucide-react";
 
 interface StreamMetrics {
@@ -135,6 +137,9 @@ function ArenaContent() {
   // Active streaming target turn & model slot tracking
   const [streamingTurnId, setStreamingTurnId] = useState<string | null>(null);
   const [streamingSlot, setStreamingSlot] = useState<"all" | "modelA" | "modelB" | "modelC">("all");
+
+  // Side-by-side diff visualizer active turn tracking
+  const [diffTurnId, setDiffTurnId] = useState<string | null>(null);
 
   // Initialize streams for up to 3 concurrent models
   const modelA = useModelStream();
@@ -1209,21 +1214,55 @@ function ArenaContent() {
                         )}
                       </div>
 
-                      {/* Declare Tie or Tie status */}
-                      {isOwner &&
-                        !turn.winnerModel &&
-                        !turn.responses.modelA.isStreaming &&
-                        !turn.responses.modelB.isStreaming &&
-                        !turn.responses.modelC.isStreaming && (
-                          <div className="flex justify-center mt-2">
+                      {/* Compare Diff & Declare Tie actions row */}
+                      <div className="flex flex-wrap items-center justify-center gap-3 mt-2">
+                        {turn.activeCount >= 2 &&
+                          !turn.responses.modelA.isStreaming &&
+                          !turn.responses.modelB.isStreaming &&
+                          !turn.responses.modelC.isStreaming && (
+                            <button
+                              onClick={() => setDiffTurnId(diffTurnId === turn.id ? null : turn.id)}
+                              className={`px-4 py-2 rounded-xl border border-border-custom text-xs font-bold transition-all flex items-center gap-2 cursor-pointer shadow-sm ${
+                                diffTurnId === turn.id
+                                  ? "bg-accent text-white border-accent"
+                                  : "bg-card-bg/60 hover:bg-muted/40 text-muted-foreground hover:text-foreground"
+                              }`}
+                              title="Compare responses with semantic diff visualizer"
+                            >
+                              <GitCompare size={14} />
+                              <span>{diffTurnId === turn.id ? "Hide Diff Visualizer" : "Compare Diff"}</span>
+                            </button>
+                          )}
+
+                        {isOwner &&
+                          !turn.winnerModel &&
+                          !turn.responses.modelA.isStreaming &&
+                          !turn.responses.modelB.isStreaming &&
+                          !turn.responses.modelC.isStreaming && (
                             <button
                               onClick={() => handleVote(turn.id, null)}
                               className="px-4 py-2 rounded-xl border border-border-custom bg-card-bg/60 hover:bg-muted/40 text-xs font-bold transition-all duration-150 flex items-center gap-2 cursor-pointer text-muted-foreground hover:text-foreground shadow-sm"
                             >
                               <span>🤝 Declare Tie</span>
                             </button>
-                          </div>
-                        )}
+                          )}
+                      </div>
+
+                      {/* Render Semantic Diff Visualizer Drawer when active */}
+                      {diffTurnId === turn.id && (
+                        <DiffViewer
+                          models={turn.models.map((m, idx) => {
+                            const slot = idx === 0 ? "modelA" : idx === 1 ? "modelB" : "modelC";
+                            const resp = turn.responses[slot as keyof typeof turn.responses];
+                            return {
+                              key: slot,
+                              name: m.name || m.id,
+                              text: resp?.text || "",
+                            };
+                          })}
+                          onClose={() => setDiffTurnId(null)}
+                        />
+                      )}
 
                       {turn.winnerModel === "tie" && (
                         <div className="flex justify-center mt-2 select-none">
