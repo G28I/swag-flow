@@ -4,7 +4,7 @@ import prisma from "@/app/lib/prisma";
 import { aj } from "@/app/lib/arcjet";
 import { logStatsigEvent } from "@/app/lib/statsig";
 import { env } from "@/app/lib/env";
-import { executeWithRetryAndBackoff } from "@/app/lib/retryEngine";
+import { executeWithRetryAndBackoff, getCooldownKey } from "@/app/lib/retryEngine";
 
 function safeEnqueue(
   controller: ReadableStreamDefaultController,
@@ -249,8 +249,9 @@ export async function POST(req: NextRequest) {
                   maxRetries: 3,
                   baseDelayMs: 500,
                   maxDelayMs: 8000,
-                  modelId: currentTryModel,
+                  cooldownKey: getCooldownKey("openrouter", currentTryModel),
                   signal: req.signal,
+                  streamStarted: false,
                 }
               );
 
@@ -287,15 +288,11 @@ export async function POST(req: NextRequest) {
               })
               .catch(() => {});
 
-            controller.enqueue(
-              encoder.encode(
-                `data: ${JSON.stringify({
-                  type: "fallback",
-                  originalModel: model,
-                  fallbackModel: activeModel,
-                })}\n\n`
-              )
-            );
+            safeEnqueue(controller, encoder, {
+              type: "fallback",
+              originalModel: model,
+              fallbackModel: activeModel,
+            });
           }
 
           const reader = response.body?.getReader();
@@ -525,20 +522,12 @@ export async function POST(req: NextRequest) {
             error: errorMessage,
           }).catch(() => {});
 
-          // Inform client of the precise error if controller is open
-          try {
-            controller.enqueue(
-              encoder.encode(
-                `data: ${JSON.stringify({
-                  type: "error",
-                  message: errorMessage,
-                })}\n\n`
-              )
-            );
-            controller.close();
-          } catch {
-            // Client may have already closed connection
-          }
+          // Inform client of the error cleanly
+          safeEnqueue(controller, encoder, {
+            type: "error",
+            message: errorMessage,
+          });
+          safeClose(controller);
         }
       },
     });
