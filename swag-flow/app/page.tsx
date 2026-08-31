@@ -7,6 +7,8 @@ import remarkGfm from "remark-gfm";
 import { useModelStream } from "./arena/useModelStream";
 import AppShell from "@/components/AppShell";
 import DiffViewer from "@/components/DiffViewer";
+import { ExportModal } from "@/components/ExportModal";
+import { ShareModal } from "@/components/ShareModal";
 import HyperparameterDrawer, {
   DEFAULT_HYPERPARAMETERS,
   Hyperparameters,
@@ -38,7 +40,7 @@ import {
   SlidersHorizontal,
   Download,
 } from "lucide-react";
-import { ExportModal } from "@/components/ExportModal";
+
 
 interface StreamMetrics {
   ttft: number;
@@ -167,6 +169,9 @@ function ArenaContent() {
   // Multi-format export modal state
   const [showExportModal, setShowExportModal] = useState(false);
   const [exportTurnId, setExportTurnId] = useState<string | null>(null);
+
+  // Social share modal state
+  const [isShareOpen, setIsShareOpen] = useState(false);
 
   // Initialize streams for up to 3 concurrent models
   const modelA = useModelStream();
@@ -461,12 +466,8 @@ function ArenaContent() {
   };
 
   const handleShare = () => {
-    if (typeof window !== "undefined") {
-      navigator.clipboard.writeText(window.location.href);
-      setCopied(true);
-      trackClientEvent("thread_shared", { threadId, turnCount: turns.length });
-      setTimeout(() => setCopied(false), 2000);
-    }
+    setIsShareOpen(true);
+    trackClientEvent("thread_shared", { threadId, turnCount: turns.length });
   };
 
   const handleReset = () => {
@@ -1788,6 +1789,14 @@ function ArenaContent() {
           threadTitle={threadTitle}
           turns={activeTurns}
           initialTurnId={exportTurnId}
+        />
+
+        {/* Social Media & Copy Link Share Modal */}
+        <ShareModal
+          isOpen={isShareOpen}
+          onClose={() => setIsShareOpen(false)}
+          title={threadTitle}
+          threadId={threadId}
         />
           </div>
         </AppShell>
