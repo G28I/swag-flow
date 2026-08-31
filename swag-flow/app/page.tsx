@@ -165,16 +165,21 @@ function ArenaContent() {
   const modelB = useModelStream();
   const modelC = useModelStream();
 
-  // Synchronize turns with localStorage to guard against page refresh data loss
+  // Synchronize turns with localStorage to guard against page refresh data loss (token-bound)
   useEffect(() => {
-    if (turns.length > 0) {
+    if (turns.length > 0 && isOwner) {
       try {
-        localStorage.setItem(`arena_cache_${threadId || "current"}`, JSON.stringify(turns));
+        const anonToken = getAnonToken();
+        const payload = {
+          anonToken,
+          turns,
+        };
+        localStorage.setItem(`arena_cache_${threadId || "current"}`, JSON.stringify(payload));
       } catch {
         // Ignore storage limit errors
       }
     }
-  }, [turns, threadId]);
+  }, [turns, threadId, isOwner]);
 
   // Read thread from query parameters and load thread history
   useEffect(() => {
@@ -195,15 +200,20 @@ function ArenaContent() {
         return;
       }
 
-      // Optimistic restoration from localStorage for saved thread
+      // Token-bound restoration from localStorage for saved thread
       const targetKey = `arena_cache_${threadParam}`;
 
       try {
         const cached = localStorage.getItem(targetKey);
         if (cached) {
           const parsed = JSON.parse(cached);
-          if (Array.isArray(parsed) && parsed.length > 0) {
-            setTurns(parsed);
+          const currentToken = getAnonToken();
+
+          if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+            // Restore cached turns only if local anonToken matches owner token
+            if (parsed.anonToken && parsed.anonToken === currentToken && Array.isArray(parsed.turns) && parsed.turns.length > 0) {
+              setTurns(parsed.turns);
+            }
           }
         }
       } catch {
