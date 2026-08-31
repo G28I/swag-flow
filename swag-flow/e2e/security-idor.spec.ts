@@ -94,4 +94,46 @@ test.describe("Security, IDOR Protection & Cache Purge E2E", () => {
     // Should return 403 or 404 (authorization failure) and NEVER 200
     expect([403, 404]).toContain(response.status());
   });
+
+  test("prevents rendering cached transcripts before server ownership check even with matching anonToken", async ({ page }) => {
+    await page.goto("/");
+
+    // Inject a cached transcript with matching anonToken for thread_unauthorized_403
+    await page.evaluate(() => {
+      const anonToken = localStorage.getItem("swag_flow_anon_token") || "token_123";
+      localStorage.setItem(
+        "arena_cache_thread_unauthorized_403",
+        JSON.stringify({
+          anonToken,
+          turns: [
+            {
+              id: "turn1",
+              prompt: "Private secret prompt text",
+              winnerModel: null,
+              activeCount: 1,
+              models: [{ id: "model1", name: "Model 1" }],
+              responses: { modelA: { text: "Private secret response text", error: null, metrics: null, isStreaming: false, messageId: "m1" } },
+              promptId: "p1",
+            },
+          ],
+        })
+      );
+    });
+
+    // Intercept network request to delay 403 response
+    await page.route("**/api/arena/threads?id=thread_unauthorized_403", async (route) => {
+      await new Promise((r) => setTimeout(r, 1000));
+      await route.fulfill({
+        status: 403,
+        contentType: "application/json",
+        body: JSON.stringify({ error: "Access denied" }),
+      });
+    });
+
+    await page.goto("/?thread=thread_unauthorized_403");
+
+    // During the 1-second network delay window, private prompt text MUST NOT be rendered
+    const privateBubble = page.locator("text=Private secret prompt text");
+    await expect(privateBubble).not.toBeVisible();
+  });
 });
