@@ -1249,9 +1249,9 @@ function ArenaContent() {
                       {/* Compare Diff & Declare Tie actions row */}
                       <div className="flex flex-wrap items-center justify-center gap-3 mt-2">
                         {turn.activeCount >= 2 &&
-                          !turn.responses.modelA.isStreaming &&
-                          !turn.responses.modelB.isStreaming &&
-                          !turn.responses.modelC.isStreaming && (
+                          !turn.responses?.modelA?.isStreaming &&
+                          !turn.responses?.modelB?.isStreaming &&
+                          !turn.responses?.modelC?.isStreaming && (
                             <button
                               onClick={() => setDiffTurnId(diffTurnId === turn.id ? null : turn.id)}
                               className={`px-4 py-2 rounded-xl border border-border-custom text-xs font-bold transition-all flex items-center gap-2 cursor-pointer shadow-sm ${
@@ -1268,9 +1268,9 @@ function ArenaContent() {
 
                         {isOwner &&
                           !turn.winnerModel &&
-                          !turn.responses.modelA.isStreaming &&
-                          !turn.responses.modelB.isStreaming &&
-                          !turn.responses.modelC.isStreaming && (
+                          !turn.responses?.modelA?.isStreaming &&
+                          !turn.responses?.modelB?.isStreaming &&
+                          !turn.responses?.modelC?.isStreaming && (
                             <button
                               onClick={() => handleVote(turn.id, null)}
                               className="px-4 py-2 rounded-xl border border-border-custom bg-card-bg/60 hover:bg-muted/40 text-xs font-bold transition-all duration-150 flex items-center gap-2 cursor-pointer text-muted-foreground hover:text-foreground shadow-sm"
