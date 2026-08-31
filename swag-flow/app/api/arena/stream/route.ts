@@ -437,22 +437,24 @@ export async function POST(req: NextRequest) {
 
             // Update database with final response content, performance metrics, and cost usage
             try {
+              const updateData: Record<string, unknown> = {
+                content: completionText,
+                latency: totalTime,
+                ttft: actualTtft,
+                tokensPerSec,
+                tokenCount,
+                promptTokens: normalizedUsage.promptTokens,
+                completionTokens: normalizedUsage.completionTokens,
+                reasoningTokens: normalizedUsage.reasoningTokens,
+                cachedTokens: normalizedUsage.cachedTokens,
+                costUsd: normalizedUsage.costUsd,
+                costSource: normalizedUsage.costSource,
+                actualModel: activeModel,
+              };
+
               await prisma.message.update({
                 where: { id: assistantMessage.id },
-                data: {
-                  content: completionText,
-                  latency: totalTime,
-                  ttft: actualTtft,
-                  tokensPerSec,
-                  tokenCount,
-                  promptTokens: normalizedUsage.promptTokens,
-                  completionTokens: normalizedUsage.completionTokens,
-                  reasoningTokens: normalizedUsage.reasoningTokens,
-                  cachedTokens: normalizedUsage.cachedTokens,
-                  costUsd: normalizedUsage.costUsd,
-                  costSource: normalizedUsage.costSource,
-                  actualModel: activeModel,
-                },
+                data: updateData as Parameters<typeof prisma.message.update>[0]["data"],
               });
             } catch (dbErr) {
               console.warn("Notice: Message update skipped or record moved:", dbErr);
