@@ -7,6 +7,10 @@ import remarkGfm from "remark-gfm";
 import { useModelStream } from "./arena/useModelStream";
 import AppShell from "@/components/AppShell";
 import DiffViewer from "@/components/DiffViewer";
+import HyperparameterDrawer, {
+  DEFAULT_HYPERPARAMETERS,
+  Hyperparameters,
+} from "@/components/HyperparameterDrawer";
 import { getAnonToken } from "@/app/lib/anonToken";
 import { SignInButton } from "@clerk/nextjs";
 import {
@@ -29,6 +33,7 @@ import {
   ThumbsUp,
   Copy,
   GitCompare,
+  SlidersHorizontal,
 } from "lucide-react";
 
 interface StreamMetrics {
@@ -140,6 +145,10 @@ function ArenaContent() {
 
   // Side-by-side diff visualizer active turn tracking
   const [diffTurnId, setDiffTurnId] = useState<string | null>(null);
+
+  // Generation Hyperparameters state
+  const [hyperparameters, setHyperparameters] = useState<Hyperparameters>(DEFAULT_HYPERPARAMETERS);
+  const [showHyperparameterDrawer, setShowHyperparameterDrawer] = useState(false);
 
   // Initialize streams for up to 3 concurrent models
   const modelA = useModelStream();
@@ -826,7 +835,15 @@ function ArenaContent() {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ prompt: userPrompt, threadId, anonToken }),
+        body: JSON.stringify({
+          prompt: userPrompt,
+          threadId,
+          anonToken,
+          systemPrompt: hyperparameters.systemPrompt,
+          temperature: hyperparameters.temperature,
+          topP: hyperparameters.topP,
+          maxTokens: hyperparameters.maxTokens,
+        }),
       });
 
       if (!response.ok) {
@@ -839,7 +856,15 @@ function ArenaContent() {
             headers: {
               "Content-Type": "application/json",
             },
-            body: JSON.stringify({ prompt: userPrompt, threadId: null, anonToken }),
+            body: JSON.stringify({
+              prompt: userPrompt,
+              threadId: null,
+              anonToken,
+              systemPrompt: hyperparameters.systemPrompt,
+              temperature: hyperparameters.temperature,
+              topP: hyperparameters.topP,
+              maxTokens: hyperparameters.maxTokens,
+            }),
           });
 
           if (!response.ok) {
@@ -866,9 +891,16 @@ function ArenaContent() {
       // 2. Fire OpenRouter streaming connections concurrently for active slots
       activeModels.forEach((model, idx) => {
         const hook = idx === 0 ? modelA : idx === 1 ? modelB : modelC;
-        hook.startStream(currentThreadId, parentId, model.id).catch((err) => {
-          console.error(`Stream start error for model ${model.id}:`, err);
-        });
+        hook
+          .startStream(currentThreadId, parentId, model.id, {
+            systemPrompt: hyperparameters.systemPrompt,
+            temperature: hyperparameters.temperature,
+            topP: hyperparameters.topP,
+            maxTokens: hyperparameters.maxTokens,
+          })
+          .catch((err) => {
+            console.error(`Stream start error for model ${model.id}:`, err);
+          });
       });
 
       // Defer non-critical local storage history sync to background microtask
@@ -1312,33 +1344,62 @@ function ArenaContent() {
                   </div>
                 ) : (
                   <>
-                    {/* Active Model Selection Chips */}
-                    <div className="flex flex-wrap gap-2 px-1 max-h-12 overflow-y-auto">
-                      {activeModels.map((model) => (
-                        <div
-                          key={model.id}
-                          className="px-2.5 py-1 rounded-full border border-border-custom bg-card-bg text-[10px] font-bold flex items-center gap-1.5 shadow-sm text-foreground/90"
-                        >
-                          <span className="w-4 h-4 rounded-full bg-accent/20 border border-accent/30 text-accent flex items-center justify-center font-black text-[9px]">
-                            {model.name.charAt(0).toUpperCase()}
-                          </span>
-                          <span className="truncate max-w-[120px]">
-                            {model.name.split("/")[1] || model.name}
-                          </span>
-                          <button
-                            onClick={() => removeModel(model.id)}
-                            disabled={isSubmitting || isStreamingAny}
-                            className="hover:text-red-400 p-0.5 rounded-full hover:bg-muted/50 cursor-pointer disabled:opacity-50"
+                    {/* Render Hyperparameter Drawer when active */}
+                    {showHyperparameterDrawer && (
+                      <HyperparameterDrawer
+                        config={hyperparameters}
+                        onChange={setHyperparameters}
+                        onClose={() => setShowHyperparameterDrawer(false)}
+                      />
+                    )}
+
+                    {/* Active Model Selection Chips & Generation Controls button */}
+                    <div className="flex items-center justify-between gap-2 px-1">
+                      <div className="flex flex-wrap gap-2 max-h-12 overflow-y-auto">
+                        {activeModels.map((model) => (
+                          <div
+                            key={model.id}
+                            className="px-2.5 py-1 rounded-full border border-border-custom bg-card-bg text-[10px] font-bold flex items-center gap-1.5 shadow-sm text-foreground/90"
                           >
-                            <X size={10} />
-                          </button>
-                        </div>
-                      ))}
-                      {activeModels.length === 0 && (
-                        <span className="text-[10px] text-red-400 font-bold bg-red-950/30 border border-red-800/30 px-3 py-1 rounded-full select-none animate-pulse">
-                          No active models selected! Add a model to compare.
-                        </span>
-                      )}
+                            <span className="w-4 h-4 rounded-full bg-accent/20 border border-accent/30 text-accent flex items-center justify-center font-black text-[9px]">
+                              {model.name.charAt(0).toUpperCase()}
+                            </span>
+                            <span className="truncate max-w-[120px]">
+                              {model.name.split("/")[1] || model.name}
+                            </span>
+                            <button
+                              onClick={() => removeModel(model.id)}
+                              disabled={isSubmitting || isStreamingAny}
+                              className="hover:text-red-400 p-0.5 rounded-full hover:bg-muted/50 cursor-pointer disabled:opacity-50"
+                            >
+                              <X size={10} />
+                            </button>
+                          </div>
+                        ))}
+                        {activeModels.length === 0 && (
+                          <span className="text-[10px] text-red-400 font-bold bg-red-950/30 border border-red-800/30 px-3 py-1 rounded-full select-none animate-pulse">
+                            No active models selected! Add a model to compare.
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Hyperparameter Controls Button */}
+                      <button
+                        type="button"
+                        onClick={() => setShowHyperparameterDrawer(!showHyperparameterDrawer)}
+                        className={`px-3 py-1.5 rounded-full border text-[11px] font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-sm shrink-0 ${
+                          showHyperparameterDrawer || hyperparameters.systemPrompt.trim().length > 0
+                            ? "bg-accent/15 border-accent/40 text-accent"
+                            : "bg-card-bg border-border-custom text-muted-foreground hover:text-foreground"
+                        }`}
+                        title="Configure System Prompt, Temperature, Top P & Max Tokens"
+                      >
+                        <SlidersHorizontal size={13} />
+                        <span className="hidden sm:inline">Model Controls</span>
+                        {hyperparameters.systemPrompt.trim().length > 0 && (
+                          <span className="w-2 h-2 rounded-full bg-accent animate-ping" />
+                        )}
+                      </button>
                     </div>
 
                     {/* Prompt Box */}

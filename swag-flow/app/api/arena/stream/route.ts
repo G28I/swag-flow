@@ -64,7 +64,7 @@ export async function POST(req: NextRequest) {
 
     // 3. Parse request body
     const body = await req.json();
-    const { threadId, parentId, model, anonToken: bodyAnonToken } = body;
+    const { threadId, parentId, model, anonToken: bodyAnonToken, systemPrompt, temperature, topP, maxTokens } = body;
     const anonTokenHeader = req.headers.get("x-anon-token");
     const anonToken = bodyAnonToken || anonTokenHeader;
 
@@ -109,6 +109,12 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // Inherit or override generation hyperparameters
+    const effectiveSystemPrompt = parentMessage?.systemPrompt || (typeof systemPrompt === "string" ? systemPrompt : null);
+    const effectiveTemperature = parentMessage?.temperature ?? (typeof temperature === "number" ? temperature : null);
+    const effectiveTopP = parentMessage?.topP ?? (typeof topP === "number" ? topP : null);
+    const effectiveMaxTokens = parentMessage?.maxTokens ?? (typeof maxTokens === "number" ? maxTokens : null);
+
     // 6. Create assistant message placeholder in database only after authorization passes
     const assistantMessage = await prisma.message.create({
       data: {
@@ -117,16 +123,30 @@ export async function POST(req: NextRequest) {
         model,
         threadId,
         parentId,
+        systemPrompt: effectiveSystemPrompt,
+        temperature: effectiveTemperature,
+        topP: effectiveTopP,
+        maxTokens: effectiveMaxTokens,
       },
     });
 
+    // Construct streaming messages array, inserting system prompt if present
+    const messagesToStream: Array<{ role: "system" | "user" | "assistant"; content: string }> = [];
+    if (effectiveSystemPrompt && effectiveSystemPrompt.trim() !== "") {
+      messagesToStream.push({
+        role: "system",
+        content: effectiveSystemPrompt.trim(),
+      });
+    }
+
     const parentIndex = pastMessages.findIndex((m) => m.id === parentId);
-    const messagesToStream = (
+    const historyMessages = (
       parentIndex !== -1 ? pastMessages.slice(0, parentIndex + 1) : pastMessages
     ).map((m) => ({
       role: m.role as "user" | "assistant",
       content: m.content,
     }));
+    messagesToStream.push(...historyMessages);
 
     // 7. Return standard Server-Sent Events (SSE) Response
     const reqRecvTime = performance.now();
@@ -161,11 +181,17 @@ export async function POST(req: NextRequest) {
         };
 
         try {
-          // Send initial metadata containing the DB message ID and server receive timestamp
+          // Send initial metadata containing the DB message ID, server receive timestamp, and hyperparameters
           safeEnqueue(controller, encoder, {
             type: "meta",
             messageId: assistantMessage.id,
             reqRecvMs: Math.round(reqRecvTime),
+            config: {
+              systemPrompt: effectiveSystemPrompt,
+              temperature: effectiveTemperature,
+              topP: effectiveTopP,
+              maxTokens: effectiveMaxTokens,
+            },
           });
 
           // Fallback cascade models if primary model is rate-limited or unavailable
@@ -193,6 +219,22 @@ export async function POST(req: NextRequest) {
 
               try {
                 const fetchStart = performance.now();
+                const openRouterPayload: Record<string, unknown> = {
+                  model: currentTryModel,
+                  messages: messagesToStream,
+                  stream: true,
+                };
+
+                if (typeof effectiveTemperature === "number" && !isNaN(effectiveTemperature)) {
+                  openRouterPayload.temperature = Math.max(0, Math.min(2, effectiveTemperature));
+                }
+                if (typeof effectiveTopP === "number" && !isNaN(effectiveTopP)) {
+                  openRouterPayload.top_p = Math.max(0, Math.min(1, effectiveTopP));
+                }
+                if (typeof effectiveMaxTokens === "number" && !isNaN(effectiveMaxTokens)) {
+                  openRouterPayload.max_tokens = Math.max(1, Math.min(8192, effectiveMaxTokens));
+                }
+
                 response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
                   method: "POST",
                   headers: {
@@ -201,11 +243,7 @@ export async function POST(req: NextRequest) {
                     "HTTP-Referer": "http://localhost:3000",
                     "X-Title": "Swag-flow",
                   },
-                  body: JSON.stringify({
-                    model: currentTryModel,
-                    messages: messagesToStream,
-                    stream: true,
-                  }),
+                  body: JSON.stringify(openRouterPayload),
                   signal: activeAbortController.signal,
                 });
                 openRouterConnectMs = performance.now() - fetchStart;

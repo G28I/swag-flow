@@ -89,7 +89,17 @@ export function useModelStream() {
   }, []);
 
   const startStream = useCallback(
-    async (threadId: string, parentId: string, model: string): Promise<StreamSnapshot> => {
+    async (
+      threadId: string,
+      parentId: string,
+      model: string,
+      hyperparameters?: {
+        systemPrompt?: string;
+        temperature?: number;
+        topP?: number;
+        maxTokens?: number;
+      }
+    ): Promise<StreamSnapshot> => {
       // Clean up previous stream and state
       reset();
 
@@ -138,6 +148,10 @@ export function useModelStream() {
             parentId,
             model,
             anonToken,
+            systemPrompt: hyperparameters?.systemPrompt,
+            temperature: hyperparameters?.temperature,
+            topP: hyperparameters?.topP,
+            maxTokens: hyperparameters?.maxTokens,
           }),
           signal: controller.signal,
         });

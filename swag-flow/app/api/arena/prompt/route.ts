@@ -15,7 +15,7 @@ export async function POST(req: NextRequest) {
   try {
     // 1. Fast payload validation before authorization and network checks
     const body = await req.json();
-    const { prompt, threadId, anonToken } = body;
+    const { prompt, threadId, anonToken, systemPrompt, temperature, topP, maxTokens } = body;
 
     if (!prompt || typeof prompt !== "string" || prompt.trim() === "") {
       return NextResponse.json({ error: "Prompt is required" }, { status: 400 });
@@ -101,6 +101,10 @@ export async function POST(req: NextRequest) {
         role: "user",
         content: prompt.trim(),
         threadId: targetThreadId,
+        systemPrompt: typeof systemPrompt === "string" ? systemPrompt.trim() : null,
+        temperature: typeof temperature === "number" ? temperature : null,
+        topP: typeof topP === "number" ? topP : null,
+        maxTokens: typeof maxTokens === "number" ? maxTokens : null,
       },
     });
 
