@@ -547,29 +547,7 @@ function ArenaContent() {
 
     setIsSubmitting(true);
     setError(null);
-    setEditingTurnId(null);
-
     const currentTurn = turns[targetTurnIndex];
-
-    // Save existing version of this turn in history map
-    const existingVersions = turnVersionsMap[turnId] || [currentTurn];
-    const newVersionIndex = existingVersions.length;
-    const updatedVersions = [...existingVersions];
-
-    setTurnVersionsMap((prev) => ({
-      ...prev,
-      [turnId]: [...existingVersions, newTurn],
-    }));
-
-    setActiveVersionIndexMap((prev) => ({
-      ...prev,
-      [turnId]: newVersionIndex,
-    }));
-
-    // Reset stream hooks
-    modelA.reset();
-    modelB.reset();
-    modelC.reset();
 
     const newTurn: Turn = {
       id: turnId,
@@ -600,14 +578,27 @@ function ArenaContent() {
           messageId: null,
         },
       },
-      promptId: "",
+      promptId: currentTurn.promptId || turnId,
     };
 
-    // Update history map with new version included
+    // Save existing version of this turn in history map
+    const existingVersions = turnVersionsMap[turnId] || [currentTurn];
+    const newVersionIndex = existingVersions.length;
+
     setTurnVersionsMap((prev) => ({
       ...prev,
-      [turnId]: [...(prev[turnId] || [currentTurn]), newTurn],
+      [turnId]: [...existingVersions, newTurn],
     }));
+
+    setActiveVersionIndexMap((prev) => ({
+      ...prev,
+      [turnId]: newVersionIndex,
+    }));
+
+    // Reset stream hooks
+    modelA.reset();
+    modelB.reset();
+    modelC.reset();
 
     // Truncate turns feed up to edited turn
     setTurns((prev) => {
