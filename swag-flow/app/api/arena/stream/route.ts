@@ -5,6 +5,7 @@ import { aj } from "@/app/lib/arcjet";
 import { logStatsigEvent } from "@/app/lib/statsig";
 import { env } from "@/app/lib/env";
 import { executeWithRetryAndBackoff, getCooldownKey } from "@/app/lib/retryEngine";
+import { normalizeUsage } from "@/app/lib/costEngine";
 
 function safeEnqueue(
   controller: ReadableStreamDefaultController,
@@ -219,6 +220,7 @@ export async function POST(req: NextRequest) {
                 model: currentTryModel,
                 messages: messagesToStream,
                 stream: true,
+                usage: { include: true },
               };
 
               if (typeof effectiveTemperature === "number" && !isNaN(effectiveTemperature)) {
@@ -305,6 +307,7 @@ export async function POST(req: NextRequest) {
           let buffer = "";
           startTime = performance.now();
           let lastFlushTime = performance.now();
+          let capturedUsageObj: Record<string, any> | null = null;
 
           try {
             while (true) {
@@ -337,12 +340,19 @@ export async function POST(req: NextRequest) {
                     const parsedObj = parsed as {
                       error?: { message?: string };
                       choices?: Array<{ delta?: { content?: string } }>;
-                      usage?: { completion_tokens?: number };
+                      usage?: Record<string, any>;
                     };
 
                     if (parsedObj.error) {
                       const msg = parsedObj.error.message || "Model provider error";
                       throw new Error(`OpenRouter: ${msg}`);
+                    }
+
+                    if (parsedObj.usage) {
+                      capturedUsageObj = { ...(capturedUsageObj || {}), ...(parsedObj.usage || {}) };
+                      if (typeof parsedObj.usage.completion_tokens === "number") {
+                        tokenCount = parsedObj.usage.completion_tokens;
+                      }
                     }
 
                     const content = parsedObj.choices?.[0]?.delta?.content;
@@ -369,10 +379,6 @@ export async function POST(req: NextRequest) {
                           .catch(() => {});
                       }
                     }
-
-                    if (parsedObj.usage?.completion_tokens) {
-                      tokenCount = parsedObj.usage.completion_tokens;
-                    }
                   }
                 }
               }
@@ -393,7 +399,7 @@ export async function POST(req: NextRequest) {
                   const parsedObj = parsed as {
                     error?: { message?: string };
                     choices?: Array<{ delta?: { content?: string } }>;
-                    usage?: { completion_tokens?: number };
+                    usage?: Record<string, any>;
                   };
 
                   if (parsedObj.error) {
@@ -401,14 +407,18 @@ export async function POST(req: NextRequest) {
                     throw new Error(`OpenRouter: ${msg}`);
                   }
 
+                  if (parsedObj.usage) {
+                    capturedUsageObj = { ...capturedUsageObj, ...parsedObj.usage };
+                    if (typeof parsedObj.usage.completion_tokens === "number") {
+                      tokenCount = parsedObj.usage.completion_tokens;
+                    }
+                  }
+
                   const content = parsedObj.choices?.[0]?.delta?.content;
                   if (content) {
                     completionText += content;
                     tokenCount += 1;
                     safeEnqueue(controller, encoder, { type: "token", text: content });
-                  }
-                  if (parsedObj.usage?.completion_tokens) {
-                    tokenCount = parsedObj.usage.completion_tokens;
                   }
                 }
               }
@@ -419,7 +429,13 @@ export async function POST(req: NextRequest) {
             const tokensPerSec =
               totalTime > actualTtft ? tokenCount / (totalTime - actualTtft) : tokenCount;
 
-            // Update database with final response content and performance metrics
+            const normalizedUsage = normalizeUsage(capturedUsageObj, {
+              modelRequested: model,
+              actualModelUsed: activeModel,
+              fallbackOccurred: activeModel !== model,
+            });
+
+            // Update database with final response content, performance metrics, and cost usage
             try {
               await prisma.message.update({
                 where: { id: assistantMessage.id },
@@ -429,6 +445,13 @@ export async function POST(req: NextRequest) {
                   ttft: actualTtft,
                   tokensPerSec,
                   tokenCount,
+                  promptTokens: normalizedUsage.promptTokens,
+                  completionTokens: normalizedUsage.completionTokens,
+                  reasoningTokens: normalizedUsage.reasoningTokens,
+                  cachedTokens: normalizedUsage.cachedTokens,
+                  costUsd: normalizedUsage.costUsd,
+                  costSource: normalizedUsage.costSource,
+                  actualModel: activeModel,
                 },
               });
             } catch (dbErr) {
@@ -439,11 +462,13 @@ export async function POST(req: NextRequest) {
             logStatsigEvent(effectiveUserId, "model_response_completed", {
               threadId,
               model,
+              actualModel: activeModel,
               messageId: assistantMessage.id,
               latency: totalTime,
               ttft: actualTtft,
               tokensPerSec,
               tokenCount,
+              costUsd: normalizedUsage.costUsd,
               status: "success",
             }).catch(() => {});
 
@@ -454,6 +479,7 @@ export async function POST(req: NextRequest) {
               ttft: actualTtft,
               tokensPerSec,
               tokenCount,
+              usage: normalizedUsage,
             });
             clearInactivityTimeout();
             safeClose(controller);

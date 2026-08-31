@@ -12,6 +12,10 @@ import HyperparameterDrawer, {
   Hyperparameters,
 } from "@/components/HyperparameterDrawer";
 import { getAnonToken } from "@/app/lib/anonToken";
+import {
+  getTurnComparisonInsights,
+  calculateEfficiencyMetrics,
+} from "@/app/lib/costEngine";
 import { SignInButton } from "@clerk/nextjs";
 import {
   ArrowUp,
@@ -44,6 +48,13 @@ interface StreamMetrics {
   latency: number;
   tokensPerSec: number;
   tokenCount: number;
+  costUsd?: number | null;
+  costSource?: string | null;
+  promptTokens?: number | null;
+  completionTokens?: number | null;
+  reasoningTokens?: number | null;
+  cachedTokens?: number | null;
+  actualModel?: string | null;
 }
 
 interface TurnResponse {
@@ -320,6 +331,13 @@ function ArenaContent() {
                           latency: rA.latency || 0,
                           tokensPerSec: rA.tokensPerSec || 0,
                           tokenCount: rA.tokenCount || 0,
+                          costUsd: typeof rA.costUsd === "number" ? rA.costUsd : rA.cost ?? null,
+                          costSource: rA.costSource || (rA.model?.includes(":free") ? "openrouter" : "unknown"),
+                          promptTokens: rA.promptTokens || null,
+                          completionTokens: rA.completionTokens || null,
+                          reasoningTokens: rA.reasoningTokens || null,
+                          cachedTokens: rA.cachedTokens || null,
+                          actualModel: rA.actualModel || rA.model || null,
                         }
                       : null,
                     isStreaming: false,
@@ -334,6 +352,13 @@ function ArenaContent() {
                           latency: rB.latency || 0,
                           tokensPerSec: rB.tokensPerSec || 0,
                           tokenCount: rB.tokenCount || 0,
+                          costUsd: typeof rB.costUsd === "number" ? rB.costUsd : rB.cost ?? null,
+                          costSource: rB.costSource || (rB.model?.includes(":free") ? "openrouter" : "unknown"),
+                          promptTokens: rB.promptTokens || null,
+                          completionTokens: rB.completionTokens || null,
+                          reasoningTokens: rB.reasoningTokens || null,
+                          cachedTokens: rB.cachedTokens || null,
+                          actualModel: rB.actualModel || rB.model || null,
                         }
                       : null,
                     isStreaming: false,
@@ -348,6 +373,13 @@ function ArenaContent() {
                           latency: rC.latency || 0,
                           tokensPerSec: rC.tokensPerSec || 0,
                           tokenCount: rC.tokenCount || 0,
+                          costUsd: typeof rC.costUsd === "number" ? rC.costUsd : rC.cost ?? null,
+                          costSource: rC.costSource || (rC.model?.includes(":free") ? "openrouter" : "unknown"),
+                          promptTokens: rC.promptTokens || null,
+                          completionTokens: rC.completionTokens || null,
+                          reasoningTokens: rC.reasoningTokens || null,
+                          cachedTokens: rC.cachedTokens || null,
+                          actualModel: rC.actualModel || rC.model || null,
                         }
                       : null,
                     isStreaming: false,
@@ -1414,6 +1446,57 @@ function ArenaContent() {
                         )}
                       </div>
 
+                      {/* Turn Efficiency Insights Highlights Bar */}
+                      {(() => {
+                        const modelEntries = [
+                          { modelId: "modelA", modelName: turn.models[0]?.name || "Model A", text: turn.responses.modelA.text, error: turn.responses.modelA.error, metrics: turn.responses.modelA.metrics },
+                          { modelId: "modelB", modelName: turn.models[1]?.name || "Model B", text: turn.responses.modelB.text, error: turn.responses.modelB.error, metrics: turn.responses.modelB.metrics },
+                          { modelId: "modelC", modelName: turn.models[2]?.name || "Model C", text: turn.responses.modelC.text, error: turn.responses.modelC.error, metrics: turn.responses.modelC.metrics },
+                        ].slice(0, turn.activeCount);
+
+                        const insights = getTurnComparisonInsights(modelEntries);
+                        if (!insights.cheapestModelId && !insights.fastestTtftModelId && !insights.highestThroughputModelId && !insights.mostTokenEfficientModelId) {
+                          return null;
+                        }
+
+                        const getModelLabel = (id: string | null) => {
+                          if (!id) return "";
+                          const idx = id === "modelA" ? 0 : id === "modelB" ? 1 : 2;
+                          return turn.models[idx]?.name || id;
+                        };
+
+                        return (
+                          <div className="bg-card-bg/60 border border-border-custom/80 rounded-2xl p-3 px-5 flex flex-wrap items-center justify-between gap-3 text-xs shadow-sm">
+                            <span className="font-bold text-foreground flex items-center gap-1.5">
+                              <Sparkles size={14} className="text-accent" />
+                              Turn Efficiency Highlights:
+                            </span>
+                            <div className="flex flex-wrap items-center gap-2 text-[11px] font-semibold">
+                              {insights.cheapestModelId && (
+                                <span className="px-2.5 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 flex items-center gap-1">
+                                  🏷️ Cheapest: <strong>{getModelLabel(insights.cheapestModelId)}</strong>
+                                </span>
+                              )}
+                              {insights.fastestTtftModelId && (
+                                <span className="px-2.5 py-1 rounded-lg bg-blue-500/10 border border-blue-500/30 text-blue-400 flex items-center gap-1">
+                                  ⚡ Fastest TTFT: <strong>{getModelLabel(insights.fastestTtftModelId)}</strong>
+                                </span>
+                              )}
+                              {insights.highestThroughputModelId && (
+                                <span className="px-2.5 py-1 rounded-lg bg-purple-500/10 border border-purple-500/30 text-purple-400 flex items-center gap-1">
+                                  🚀 Highest Throughput: <strong>{getModelLabel(insights.highestThroughputModelId)}</strong>
+                                </span>
+                              )}
+                              {insights.mostTokenEfficientModelId && (
+                                <span className="px-2.5 py-1 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-400 flex items-center gap-1">
+                                  🎯 Most Token Efficient: <strong>{getModelLabel(insights.mostTokenEfficientModelId)}</strong>
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })()}
+
                       {/* Compare Diff & Declare Tie actions row */}
                       <div className="flex flex-wrap items-center justify-center gap-3 mt-2">
                         {turn.activeCount >= 2 &&
@@ -1970,14 +2053,33 @@ function ModelResponseCard({
         )}
       </div>
 
-      {/* Card Footer (Metrics Toggle) */}
+      {/* Card Footer (Metrics Toggle & Compact Badges) */}
       <div className="border-t border-border-custom bg-background/50 flex flex-col">
         <button
           onClick={() => setShowMetrics(!showMetrics)}
           disabled={!metrics && !isStreaming}
-          className="w-full px-5 py-2.5 flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-muted-foreground hover:text-foreground transition-colors cursor-pointer disabled:opacity-45 disabled:cursor-not-allowed select-none"
+          className="w-full px-4 py-2.5 flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-muted-foreground hover:text-foreground transition-colors cursor-pointer disabled:opacity-45 disabled:cursor-not-allowed select-none"
         >
-          <span>Model Metrics</span>
+          <div className="flex items-center gap-2 overflow-hidden">
+            <span className="font-bold text-foreground/80">Metrics</span>
+            {metrics && !isStreaming && (
+              <div className="flex items-center gap-1.5 text-[9.5px] font-mono font-semibold normal-case">
+                <span className="px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                  {typeof metrics.costUsd === "number"
+                    ? metrics.costUsd === 0
+                      ? "$0.00"
+                      : `$${metrics.costUsd.toFixed(4)}`
+                    : "Cost N/A"}
+                </span>
+                <span className="px-1.5 py-0.5 rounded bg-muted/60 text-foreground/80">
+                  {metrics.tokenCount || 0} tok
+                </span>
+                <span className="px-1.5 py-0.5 rounded bg-accent/10 text-accent">
+                  {(metrics.ttft * 1000).toFixed(0)}ms
+                </span>
+              </div>
+            )}
+          </div>
           {showMetrics ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
         </button>
 
@@ -1985,32 +2087,64 @@ function ModelResponseCard({
           <div className="px-5 pb-4 pt-1 flex flex-col gap-1.5 text-[10.5px] text-foreground/70 font-mono border-t border-border-custom/40">
             <div className="flex justify-between">
               <span className="text-muted-foreground">Time-to-first-token:</span>
-              <span className="text-accent font-extrabold">{metrics.ttft.toFixed(3)}s</span>
+              <span className="text-accent font-extrabold">{(metrics.ttft * 1000).toFixed(0)} ms</span>
             </div>
             <div className="flex justify-between">
               <span className="text-muted-foreground">Total Latency:</span>
-              <span className="text-foreground/90 font-bold">{metrics.latency.toFixed(3)}s</span>
+              <span className="text-foreground/90 font-bold">{metrics.latency.toFixed(2)} s</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-muted-foreground">Speed:</span>
+              <span className="text-muted-foreground">Speed / Throughput:</span>
               <span className="text-foreground/90 font-bold">
                 {metrics.tokensPerSec.toFixed(1)} tok/s
               </span>
             </div>
+            {metrics.promptTokens !== undefined && metrics.promptTokens !== null && (
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Input Tokens:</span>
+                <span className="text-foreground/90 font-bold">{metrics.promptTokens}</span>
+              </div>
+            )}
+            {metrics.completionTokens !== undefined && metrics.completionTokens !== null && (
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Output Tokens:</span>
+                <span className="text-foreground/90 font-bold">{metrics.completionTokens}</span>
+              </div>
+            )}
+            {metrics.reasoningTokens !== undefined && metrics.reasoningTokens !== null && (
+              <div className="flex justify-between text-purple-400">
+                <span>Reasoning Tokens:</span>
+                <span className="font-bold">{metrics.reasoningTokens}</span>
+              </div>
+            )}
             <div className="flex justify-between">
               <span className="text-muted-foreground">Total Tokens:</span>
               <span className="text-foreground/90 font-bold">{metrics.tokenCount}</span>
             </div>
+            {metrics.actualModel && metrics.actualModel !== modelName && (
+              <div className="flex justify-between text-amber-400">
+                <span>Actual Model Used:</span>
+                <span className="font-bold truncate max-w-[140px]" title={metrics.actualModel}>
+                  {metrics.actualModel}
+                </span>
+              </div>
+            )}
             <div className="flex justify-between border-t border-border-custom/50 mt-1 pt-1">
-              <span className="text-muted-foreground">Cost:</span>
-              <span className="text-foreground/45 font-bold">$0.0000</span>
+              <span className="text-muted-foreground">Generation Cost:</span>
+              <span className="text-emerald-400 font-extrabold">
+                {typeof metrics.costUsd === "number"
+                  ? metrics.costUsd === 0
+                    ? "$0.0000 (Free)"
+                    : `$${metrics.costUsd.toFixed(6)} (${metrics.costSource || "openrouter"})`
+                  : "Cost unavailable"}
+              </span>
             </div>
           </div>
         )}
 
         {showMetrics && isStreaming && (
           <div className="px-5 pb-4 pt-2.5 text-center italic text-[10px] text-accent animate-pulse font-mono border-t border-border-custom/40">
-            Measuring call...
+            Measuring real-time usage & tokens...
           </div>
         )}
       </div>

@@ -6,6 +6,13 @@ export interface StreamMetrics {
   ttft: number;
   tokensPerSec: number;
   tokenCount: number;
+  costUsd?: number | null;
+  costSource?: string | null;
+  promptTokens?: number | null;
+  completionTokens?: number | null;
+  reasoningTokens?: number | null;
+  cachedTokens?: number | null;
+  actualModel?: string | null;
 }
 
 export interface StreamSnapshot {
@@ -207,11 +214,18 @@ export function useModelStream() {
                   snapshotText += event.text;
                 } else if (event.type === "done") {
                   if (watchdogRef.id) clearTimeout(watchdogRef.id);
-                  const finalM = {
+                  const finalM: StreamMetrics = {
                     latency: event.latency,
                     ttft: event.ttft,
                     tokensPerSec: event.tokensPerSec,
                     tokenCount: event.tokenCount,
+                    costUsd: event.usage?.costUsd ?? null,
+                    costSource: event.usage?.costSource ?? null,
+                    promptTokens: event.usage?.promptTokens ?? null,
+                    completionTokens: event.usage?.completionTokens ?? null,
+                    reasoningTokens: event.usage?.reasoningTokens ?? null,
+                    cachedTokens: event.usage?.cachedTokens ?? null,
+                    actualModel: event.usage?.actualModel ?? null,
                   };
                   snapshotMetrics = finalM;
                   if (abortRef.current === controller) {

@@ -1,5 +1,19 @@
 export type ExportScope = "thread" | "turn";
 
+export interface ExportModelMetrics {
+  ttft: number | null;
+  latency: number | null;
+  tokensPerSec: number | null;
+  tokenCount?: number | null;
+  costUsd?: number | null;
+  costSource?: string | null;
+  promptTokens?: number | null;
+  completionTokens?: number | null;
+  reasoningTokens?: number | null;
+  cachedTokens?: number | null;
+  actualModel?: string | null;
+}
+
 export interface ExportModelConfig {
   systemPrompt?: string | null;
   temperature?: number | null;
@@ -13,11 +27,7 @@ export interface ExportModelResponse {
   modelName: string;
   text: string;
   error?: string | null;
-  metrics?: {
-    ttft?: number | null;
-    latency?: number | null;
-    tokensPerSec?: number | null;
-  } | null;
+  metrics?: ExportModelMetrics | null;
   config?: ExportModelConfig | null;
 }
 
@@ -85,6 +95,14 @@ export function buildExportReport(params: {
               ttft: resp.metrics.ttft ?? null,
               latency: resp.metrics.latency ?? null,
               tokensPerSec: resp.metrics.tokensPerSec ?? null,
+              tokenCount: resp.metrics.tokenCount ?? null,
+              costUsd: resp.metrics.costUsd ?? null,
+              costSource: resp.metrics.costSource ?? null,
+              promptTokens: resp.metrics.promptTokens ?? null,
+              completionTokens: resp.metrics.completionTokens ?? null,
+              reasoningTokens: resp.metrics.reasoningTokens ?? null,
+              cachedTokens: resp.metrics.cachedTokens ?? null,
+              actualModel: resp.metrics.actualModel ?? null,
             }
           : null,
         config: resp?.config
@@ -196,9 +214,17 @@ export function generateMarkdownReport(report: ExportReport): string {
       if (resp.metrics) {
         lines.push("| Metric | Value |");
         lines.push("| :--- | :--- |");
+        if (resp.metrics.costUsd !== undefined && resp.metrics.costUsd !== null) {
+          lines.push(`| Generation Cost | $${resp.metrics.costUsd.toFixed(6)} (${resp.metrics.costSource || "openrouter"}) |`);
+        }
         if (resp.metrics.ttft) lines.push(`| TTFT | ${resp.metrics.ttft.toFixed(3)}s |`);
         if (resp.metrics.latency) lines.push(`| Latency | ${resp.metrics.latency.toFixed(2)}s |`);
         if (resp.metrics.tokensPerSec) lines.push(`| Throughput | ${resp.metrics.tokensPerSec.toFixed(1)} tokens/sec |`);
+        if (resp.metrics.promptTokens) lines.push(`| Input Tokens | ${resp.metrics.promptTokens} |`);
+        if (resp.metrics.completionTokens) lines.push(`| Output Tokens | ${resp.metrics.completionTokens} |`);
+        if (resp.metrics.reasoningTokens) lines.push(`| Reasoning Tokens | ${resp.metrics.reasoningTokens} |`);
+        if (resp.metrics.tokenCount) lines.push(`| Total Tokens | ${resp.metrics.tokenCount} |`);
+        if (resp.metrics.actualModel) lines.push(`| Actual Model Used | \`${resp.metrics.actualModel}\` |`);
         lines.push("");
       }
 

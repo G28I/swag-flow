@@ -37,11 +37,18 @@ model Message {
   replies  Message[] @relation("MessageReplies")
 
   // Performance metrics for assistant responses
-  latency      Float? // total latency in seconds
-  ttft         Float? // time-to-first-token in seconds
-  tokensPerSec Float?
-  tokenCount   Int?
-  cost         Float? @default(0.0) // Cost will always be $0.0000 for free tier
+  latency          Float? // total latency in seconds
+  ttft             Float? // time-to-first-token in seconds
+  tokensPerSec     Float?
+  tokenCount       Int?
+  cost             Float?   @default(0.0) // Cost will always be $0.0000 for free tier
+  promptTokens     Int?
+  completionTokens Int?
+  reasoningTokens  Int?
+  cachedTokens     Int?
+  costUsd          Float?
+  costSource       String? // "openrouter" | "calculated" | "estimated" | "unknown"
+  actualModel      String? // Model slug actually used if fallback occurred
 
   // Hyperparameters & System Configuration
   systemPrompt String?
