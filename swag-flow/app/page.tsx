@@ -307,9 +307,9 @@ function ArenaContent() {
                 turnModels = [...availableModels.slice(0, 2)];
               }
 
-              const rA = replies.find((m: { model: string }) => m.model === turnModels[0]?.id);
-              const rB = replies.find((m: { model: string }) => m.model === turnModels[1]?.id);
-              const rC = replies.find((m: { model: string }) => m.model === turnModels[2]?.id);
+              const rA = replies[0] || replies.find((m: { model: string; actualModel?: string }) => m.model === turnModels[0]?.id || m.actualModel === turnModels[0]?.id);
+              const rB = replies[1] || replies.find((m: { model: string; actualModel?: string }) => m.model === turnModels[1]?.id || m.actualModel === turnModels[1]?.id);
+              const rC = replies[2] || replies.find((m: { model: string; actualModel?: string }) => m.model === turnModels[2]?.id || m.actualModel === turnModels[2]?.id);
 
               return {
                 id: `turn_${userMsg.id}`,
@@ -2044,8 +2044,18 @@ function ModelResponseCard({
             <div className="h-4 bg-border-custom rounded w-2/3"></div>
           </div>
         ) : (
-          <div className="flex items-center justify-center h-full text-foreground/45 italic select-none">
-            Awaiting prompt submission...
+          <div className="flex flex-col items-center justify-center h-full text-foreground/45 italic select-none gap-2 text-center p-4">
+            <span>No response content generated for this model.</span>
+            {onRegenerate && (
+              <button
+                type="button"
+                onClick={onRegenerate}
+                className="not-italic px-3 py-1.5 rounded-xl border border-border-custom bg-card-bg hover:bg-muted text-xs font-bold text-foreground transition-all cursor-pointer shadow-sm flex items-center gap-1.5 mt-1"
+              >
+                <RotateCw size={12} />
+                <span>Generate Response</span>
+              </button>
+            )}
           </div>
         )}
       </div>
