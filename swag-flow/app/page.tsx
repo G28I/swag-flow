@@ -678,8 +678,8 @@ function ArenaContent() {
       }
     }
 
-    // 1. If currently streaming on a DIFFERENT turn, flush and persist ALL active streams to that originating turn
-    if (streamingTurnId && streamingTurnId !== turnId) {
+    // 1. If currently streaming on any turn, flush and persist ALL active streams to that originating turn
+    if (streamingTurnId) {
       const prevTurnId = streamingTurnId;
 
       const flushedA = modelA.isStreaming ? modelA.abort() : modelA.text;
@@ -724,30 +724,6 @@ function ArenaContent() {
       modelA.reset();
       modelB.reset();
       modelC.reset();
-    } else if (streamingTurnId === turnId) {
-      // Same turn regeneration: abort and flush only target slot hook
-      const targetHook = slot === "modelA" ? modelA : slot === "modelB" ? modelB : modelC;
-      const flushedText = targetHook.isStreaming ? targetHook.abort() : targetHook.text;
-
-      setTurns((prev) =>
-        prev.map((t) => {
-          if (t.id !== turnId) return t;
-          return {
-            ...t,
-            responses: {
-              ...t.responses,
-              [slot]: {
-                ...t.responses[slot],
-                text: flushedText || targetHook.text || t.responses[slot].text,
-                error: targetHook.error || t.responses[slot].error,
-                metrics: targetHook.metrics || t.responses[slot].metrics,
-                isStreaming: false,
-                messageId: targetHook.messageId || t.responses[slot].messageId,
-              },
-            },
-          };
-        })
-      );
     }
 
     setStreamingTurnId(turnId);
