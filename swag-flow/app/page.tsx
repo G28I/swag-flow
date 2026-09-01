@@ -654,7 +654,7 @@ function ArenaContent() {
     if (!modelItem) return;
 
     // 1. Do not interrupt an active stream running on a different turn
-    if (streamingTurnId && streamingTurnId !== turnId) {
+    if (isStreamingAny && streamingTurnId && streamingTurnId !== turnId) {
       setError("Cannot regenerate while another turn is actively streaming. Please wait or stop the active stream.");
       return;
     }
@@ -1012,6 +1012,13 @@ function ArenaContent() {
   };
 
   const isStreamingAny = modelA.isStreaming || modelB.isStreaming || modelC.isStreaming;
+
+  // Clear stale streamingTurnId when all streams are complete
+  useEffect(() => {
+    if (!isStreamingAny && streamingTurnId) {
+      setStreamingTurnId(null);
+    }
+  }, [isStreamingAny, streamingTurnId]);
 
   const handleStopAll = () => {
     modelA.abort();

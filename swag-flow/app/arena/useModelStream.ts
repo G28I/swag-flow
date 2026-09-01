@@ -125,7 +125,7 @@ export function useModelStream() {
       let snapshotMessageId: string | null = null;
       let snapshotFallbackModel: string | null = null;
 
-      // Sliding watchdog timer: aborts stream if no chunks arrive for 15s
+      // Sliding watchdog timer: aborts stream if no chunks arrive for 45s (allows server retries & fallbacks)
       const watchdogRef: { id: NodeJS.Timeout | null } = { id: null };
       let isWatchdogAborted = false;
       const resetWatchdog = () => {
@@ -137,7 +137,7 @@ export function useModelStream() {
             setError("Stream connection timed out due to inactivity.");
             setIsStreaming(false);
           }
-        }, 15000);
+        }, 45000);
       };
 
       try {
@@ -203,9 +203,12 @@ export function useModelStream() {
                 if (event.type === "meta") {
                   setMessageId(event.messageId);
                   snapshotMessageId = event.messageId;
-                } else if (event.type === "fallback") {
-                  setFallbackModel(event.fallbackModel);
-                  snapshotFallbackModel = event.fallbackModel;
+                } else if (event.type === "fallback" || event.type === "fallback_notice") {
+                  const targetModel = event.fallbackModel || event.fallback_model;
+                  if (targetModel) {
+                    setFallbackModel(targetModel);
+                    snapshotFallbackModel = targetModel;
+                  }
                 } else if (event.type === "token") {
                   // Accumulate in buffer and snapshot, schedule RAF flush
                   accumulatedTextRef.current += event.text;
