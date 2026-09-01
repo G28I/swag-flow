@@ -108,13 +108,17 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Unauthorized access to thread" }, { status: 403 });
     }
 
-    // Verify parent user message exists
-    const parentMsg = await prisma.message.findUnique({
-      where: { id: parentId },
+    // Verify parent user message exists in this thread
+    const parentMsg = await prisma.message.findFirst({
+      where: {
+        id: parentId,
+        threadId,
+        role: "user",
+      },
     });
 
     if (!parentMsg) {
-      return NextResponse.json({ error: "Parent user prompt message not found" }, { status: 404 });
+      return NextResponse.json({ error: "Parent user prompt message not found in this thread" }, { status: 404 });
     }
 
     // 5. Create assistant message placeholder in DB
@@ -273,6 +277,13 @@ export async function POST(req: NextRequest) {
                         const jsonStr = trimmed.slice(6);
                         try {
                           const parsedObj = JSON.parse(jsonStr);
+
+                          if (parsedObj.error) {
+                            const providerErrorMsg = typeof parsedObj.error === "string"
+                              ? parsedObj.error
+                              : parsedObj.error.message || "Model provider stream error";
+                            throw new Error(providerErrorMsg);
+                          }
 
                           if (parsedObj.usage) {
                             const parsedUsage = parseUsageTokens(parsedObj.usage);
