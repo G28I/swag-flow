@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import prisma from "@/app/lib/prisma";
 import { publicReadAj } from "@/app/lib/arcjet";
+import { normalizeAnonToken, isThreadOwner } from "@/app/lib/authHelper";
 
 // GET: List all threads or get a specific thread's history
 export async function GET(req: NextRequest) {
@@ -38,7 +39,8 @@ export async function GET(req: NextRequest) {
 
     const { searchParams } = new URL(req.url);
     const threadId = searchParams.get("id");
-    const anonToken = req.headers.get("x-anon-token") || searchParams.get("anonToken");
+    // Extract anonymous token ONLY from x-anon-token request header (never from URL searchParams)
+    const anonToken = req.headers.get("x-anon-token");
 
     // Single thread lookup: Require matching authenticated owner or anonymous ownership token before returning payload
     if (threadId) {
@@ -69,28 +71,12 @@ export async function GET(req: NextRequest) {
         return NextResponse.json({ error: "Thread not found" }, { status: 404 });
       }
 
-      const normalizedAnon = anonToken && typeof anonToken === "string" ? anonToken.trim() : "";
-      const expectedAnonOwner = normalizedAnon
-        ? normalizedAnon.startsWith("anon_")
-          ? normalizedAnon
-          : `anon_${normalizedAnon}`
-        : "";
-
-      const isOwner =
-        Boolean(userId && thread.userId === userId) ||
-        Boolean(
-          normalizedAnon &&
-            thread.userId.startsWith("anon_") &&
-            thread.userId === expectedAnonOwner
-        ) ||
-        (process.env.NODE_ENV === "development" && thread.userId === "mock_user_123");
-
-      if (!isOwner) {
+      if (!isThreadOwner(thread.userId, userId, anonToken)) {
         return NextResponse.json({ error: "Unauthorized access to thread history" }, { status: 403 });
       }
 
       // Omit internal user identifier from payload for privacy
-      const { userId: _internalUserId, ...safeThread } = thread;
+      const { userId: _, ...safeThread } = thread;
 
       return NextResponse.json({
         ...safeThread,
@@ -98,105 +84,36 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    // Listing user's thread history: Strictly requires authentication
-    if (!userId) {
-      return NextResponse.json({ error: "Unauthorized. Please sign in." }, { status: 401 });
+    // List all threads: filter by Clerk userId or anonymous token
+    const normalizedAnon = normalizeAnonToken(anonToken);
+
+    if (!userId && !normalizedAnon) {
+      // If neither is present, return empty list
+      return NextResponse.json([]);
     }
 
+    const whereCondition = userId
+      ? { userId }
+      : { userId: normalizedAnon };
+
     const threads = await prisma.thread.findMany({
-      where: { userId },
+      where: whereCondition,
       orderBy: { updatedAt: "desc" },
       select: {
         id: true,
         title: true,
+        parentThreadId: true,
         createdAt: true,
         updatedAt: true,
+        _count: {
+          select: { messages: true },
+        },
       },
-      take: 50,
     });
 
     return NextResponse.json(threads);
   } catch (error: unknown) {
-    console.error("Error listing threads:", error);
-    return NextResponse.json({ error: "Failed to list threads" }, { status: 500 });
-  }
-}
-
-// POST: Create a new empty thread
-export async function POST() {
-  try {
-    const isClerkConfigured =
-      process.env.CLERK_SECRET_KEY &&
-      process.env.CLERK_SECRET_KEY !== "sk_test_placeholder" &&
-      process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY &&
-      process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY !== "pk_test_placeholder";
-
-    let userId: string | null = null;
-    if (isClerkConfigured) {
-      const authObj = await auth();
-      userId = authObj.userId;
-    }
-
-    if (!userId) {
-      return NextResponse.json({ error: "Unauthorized. Please sign in." }, { status: 401 });
-    }
-
-    const thread = await prisma.thread.create({
-      data: {
-        userId,
-        title: "New Thread",
-      },
-    });
-
-    return NextResponse.json(thread);
-  } catch (error: unknown) {
-    console.error("Error creating thread:", error);
-    return NextResponse.json({ error: "Failed to create thread" }, { status: 500 });
-  }
-}
-
-// DELETE: Delete a thread by ID (passed as query param ?id=xxx)
-export async function DELETE(req: NextRequest) {
-  try {
-    const isClerkConfigured =
-      process.env.CLERK_SECRET_KEY &&
-      process.env.CLERK_SECRET_KEY !== "sk_test_placeholder" &&
-      process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY &&
-      process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY !== "pk_test_placeholder";
-
-    let userId: string | null = null;
-    if (isClerkConfigured) {
-      const authObj = await auth();
-      userId = authObj.userId;
-    }
-
-    if (!userId) {
-      return NextResponse.json({ error: "Unauthorized. Please sign in." }, { status: 401 });
-    }
-
-    const { searchParams } = new URL(req.url);
-    const threadId = searchParams.get("id");
-
-    if (!threadId) {
-      return NextResponse.json({ error: "Thread ID is required" }, { status: 400 });
-    }
-
-    // Verify ownership before deleting
-    const thread = await prisma.thread.findFirst({
-      where: { id: threadId, userId },
-    });
-
-    if (!thread) {
-      return NextResponse.json({ error: "Thread not found" }, { status: 404 });
-    }
-
-    await prisma.thread.delete({
-      where: { id: threadId },
-    });
-
-    return NextResponse.json({ success: true });
-  } catch (error: unknown) {
-    console.error("Error deleting thread:", error);
-    return NextResponse.json({ error: "Failed to delete thread" }, { status: 500 });
+    console.error("Error fetching threads:", error);
+    return NextResponse.json({ error: "An unexpected error occurred." }, { status: 500 });
   }
 }

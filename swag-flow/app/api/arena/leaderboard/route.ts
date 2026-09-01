@@ -99,7 +99,6 @@ export async function GET(req: NextRequest) {
       }
     > = {};
 
-    // Helper to get or initialize model stats
     const getStats = (modelId: string) => {
       if (!modelStatsMap[modelId]) {
         modelStatsMap[modelId] = {
@@ -115,7 +114,6 @@ export async function GET(req: NextRequest) {
       return modelStatsMap[modelId];
     };
 
-    // Aggregate votes
     votes.forEach((vote) => {
       if (Array.isArray(vote.models)) {
         vote.models.forEach((modelId) => {
@@ -129,7 +127,6 @@ export async function GET(req: NextRequest) {
       }
     });
 
-    // Aggregate message speed and TTFT metrics
     messages.forEach((msg) => {
       if (!msg.model) return;
       const stats = getStats(msg.model);
@@ -143,7 +140,7 @@ export async function GET(req: NextRequest) {
       }
     });
 
-    // 6. Build and sort rankings
+    // 6. Build and sort rankings with Laplace smoothing score to account for sample size
     const rankings = Object.values(modelStatsMap)
       .map((stat) => {
         const winRate = stat.matches > 0 ? (stat.wins / stat.matches) * 100 : 0;
@@ -156,15 +153,16 @@ export async function GET(req: NextRequest) {
           total: stat.matches,
           winRate: Math.round(winRate),
           winRateRatio: stat.matches > 0 ? stat.wins / stat.matches : 0,
+          laplaceScore: (stat.wins + 1) / (stat.matches + 2),
           ttft: Math.round(avgTtftSeconds * 1000), // in milliseconds
           tps: Math.round(avgTokensPerSec * 10) / 10, // 1 decimal place
         };
       })
-      .filter((stat) => stat.total > 0 || stat.wins > 0) // Only include models with vote interactions
+      .filter((stat) => stat.total > 0 || stat.wins > 0)
       .sort((a, b) => {
-        // Sort by win rate ratio desc, then total wins desc, then total matches desc
-        if (b.winRateRatio !== a.winRateRatio) {
-          return b.winRateRatio - a.winRateRatio;
+        // Laplace smoothed score descending to prevent low-sample anomaly, then wins desc, then total matches desc
+        if (b.laplaceScore !== a.laplaceScore) {
+          return b.laplaceScore - a.laplaceScore;
         }
         if (b.wins !== a.wins) {
           return b.wins - a.wins;
@@ -182,9 +180,9 @@ export async function GET(req: NextRequest) {
       rankings,
     });
   } catch (error: unknown) {
-    console.error("Error fetching leaderboard data:", error);
+    console.error("Error generating leaderboard:", error);
     return NextResponse.json(
-      { error: "Failed to generate leaderboard rankings." },
+      { error: "Failed to load leaderboard data." },
       { status: 500 }
     );
   }

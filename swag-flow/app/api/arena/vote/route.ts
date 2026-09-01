@@ -3,10 +3,11 @@ import { auth } from "@clerk/nextjs/server";
 import prisma from "@/app/lib/prisma";
 import { aj } from "@/app/lib/arcjet";
 import { logStatsigEvent } from "@/app/lib/statsig";
+import { normalizeAnonToken, isThreadOwner } from "@/app/lib/authHelper";
 
 export async function POST(req: NextRequest) {
   try {
-    // 1. Authenticate user
+    // 1. Authenticate user or anonymous caller
     const isClerkConfigured =
       process.env.CLERK_SECRET_KEY &&
       process.env.CLERK_SECRET_KEY !== "sk_test_placeholder" &&
@@ -23,12 +24,27 @@ export async function POST(req: NextRequest) {
       userId = "mock_user_123";
     }
 
-    if (!userId) {
+    // 2. Parse body inputs
+    const body = await req.json();
+    const { threadId, promptId, votedMessageId, votedModel, models, anonToken: bodyAnonToken } = body;
+    const anonTokenHeader = req.headers.get("x-anon-token");
+    const anonToken = bodyAnonToken || anonTokenHeader;
+
+    const effectiveUserId = userId || normalizeAnonToken(anonToken);
+
+    if (!effectiveUserId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // 2. Arcjet protection (rate limiting, bot detection, shield)
-    const decision = await aj.protect(req, { userId, requested: 1 });
+    if (!threadId || !promptId || !Array.isArray(models)) {
+      return NextResponse.json(
+        { error: "threadId, promptId, and models array are required fields." },
+        { status: 400 }
+      );
+    }
+
+    // 3. Arcjet protection (rate limiting, bot detection, shield)
+    const decision = await aj.protect(req, { userId: effectiveUserId, requested: 1 });
     if (decision.isDenied()) {
       if (decision.reason.isRateLimit()) {
         return NextResponse.json(
@@ -42,30 +58,16 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Access denied." }, { status: 403 });
     }
 
-    // 2. Parse body inputs
-    const body = await req.json();
-    const { threadId, promptId, votedMessageId, votedModel, models } = body;
-
-    if (!threadId || !promptId || !Array.isArray(models)) {
-      return NextResponse.json(
-        { error: "threadId, promptId, and models array are required fields." },
-        { status: 400 }
-      );
-    }
-
-    // 3. Verify thread ownership
-    const thread = await prisma.thread.findFirst({
-      where: {
-        id: threadId,
-        userId,
-      },
+    // 4. Verify thread ownership
+    const thread = await prisma.thread.findUnique({
+      where: { id: threadId },
     });
 
-    if (!thread) {
+    if (!thread || !isThreadOwner(thread.userId, userId, anonToken)) {
       return NextResponse.json({ error: "Thread not found or unauthorized" }, { status: 404 });
     }
 
-    // 4. Verify prompt message belongs to this thread and is a user prompt
+    // 5. Verify prompt message belongs to this thread and is a user prompt
     const promptMessage = await prisma.message.findFirst({
       where: {
         id: promptId,
@@ -81,51 +83,43 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 5. If a specific winner is voted, verify the message belongs to this prompt turn and thread
+    // 6. If a specific winner is voted, verify the message belongs to this prompt turn and thread
     if (votedMessageId) {
       const votedMessage = await prisma.message.findFirst({
         where: {
           id: votedMessageId,
           threadId,
           parentId: promptId,
-          role: "assistant",
         },
       });
 
       if (!votedMessage) {
         return NextResponse.json(
-          { error: "Voted message not found or does not belong to this prompt turn" },
-          { status: 400 }
-        );
-      }
-
-      if (votedModel && votedMessage.model !== votedModel) {
-        return NextResponse.json(
-          { error: "Voted model does not match the assistant message model" },
+          { error: "Voted message not found for this prompt turn" },
           { status: 400 }
         );
       }
     }
 
-    // 6. Check if a vote has already been cast for this prompt turn
+    // 7. Check for duplicate vote by caller on this prompt turn
     const existingVote = await prisma.vote.findFirst({
       where: {
-        userId,
+        userId: effectiveUserId,
         promptId,
       },
     });
 
     if (existingVote) {
       return NextResponse.json(
-        { error: "A vote has already been recorded for this prompt." },
-        { status: 409 }
+        { error: "You have already voted on this turn." },
+        { status: 400 }
       );
     }
 
-    // 7. Persist vote in database
+    // 8. Record the vote
     const vote = await prisma.vote.create({
       data: {
-        userId,
+        userId: effectiveUserId,
         threadId,
         promptId,
         votedMessageId: votedMessageId || null,
@@ -134,26 +128,21 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    // 8. Log custom event to Statsig
-    await logStatsigEvent(userId, "arena_vote_cast", {
-      voteId: vote.id,
+    // 9. Log telemetry event for evaluation vote
+    logStatsigEvent(effectiveUserId, "model_voted", {
       threadId,
       promptId,
       votedModel: votedModel || "tie",
-      isTie: String(votedModel === null || votedModel === undefined),
-      modelsCount: models.length,
       participatingModels: models.join(","),
-    });
+    }).catch(() => {});
 
     return NextResponse.json({
       success: true,
       voteId: vote.id,
+      votedModel: vote.votedModel,
     });
   } catch (error: unknown) {
-    console.error("Error casting vote:", error);
-    return NextResponse.json(
-      { error: "An unexpected error occurred while casting vote." },
-      { status: 500 }
-    );
+    console.error("Error recording vote:", error);
+    return NextResponse.json({ error: "An unexpected error occurred." }, { status: 500 });
   }
 }

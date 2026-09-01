@@ -16,26 +16,32 @@
 ## 🌟 Key Features
 
 ### ⚔️ Blind Side-by-Side Model Arena
+
 - **Multi-Model Parallel Streaming**: Compare up to 3 LLMs simultaneously with Server-Sent Events (SSE) streaming, real-time Time-To-First-Token (TTFT) metrics, throughput (tokens/sec), and token counts.
 - **Model Catalog Integration**: Supports OpenRouter free and paid models including Gemini 2.0 Flash, Llama 3.3 70B Instruct, Qwen 2.5 Coder 32B, Minimax M3, and Nemotron 3.5.
 
 ### 🗳️ Blind A/B Voting & Elo Leaderboard
+
 - **Anonymized Evaluation**: Model names and slots are hidden until a vote is cast or revealed.
 - **Elo Rating Engine**: Calculates dynamic Elo ratings, win/loss rates, average latencies, and vote distributions across the global leaderboard.
 
 ### 🌿 Multi-Turn Threads & Conversation Branching
+
 - **Thread Versioning & Forking**: Edit prompts at any turn and branch conversation histories using thread forking (`/api/arena/threads/fork`).
 - **Single-Slot Regeneration**: Regenerate individual model slots without interrupting active sibling streams or corrupting turn history.
 
 ### 📦 Multi-Format Export Engine
+
 - **Flexible Exporter**: Export full conversation threads or individual turn cards into styled **Markdown**, structured **JSON Payload**, or printable **PDF Document**.
 
 ### 🔗 Production-Grade Social Share Modal
+
 - **Canonical Public Links**: Generates clean, token-scrubbed canonical URLs (`/?thread=<id>`).
 - **1-Click Deep Links**: Native sharing links for **WhatsApp**, **X (Twitter)**, **Facebook**, **LinkedIn**, **Reddit**, and **Instagram**.
 - **Web Share API**: Native OS device share sheet integration for mobile browsers with modern fallback clipboard management.
 
 ### 🛡️ Security & Enterprise Protection
+
 - **Single-Prefix Anonymous Token System**: Enforces `anon_<token>` validation to prevent raw token impersonation or double-prefixing.
 - **Arcjet Bot & Rate-Limiting**: Integrated `@arcjet/next` rate limiting, bot protection, and prompt-injection shielding.
 - **Post-Authorization Cache Rendering**: Transcript caches are rendered only after server-side ownership confirmation, preventing IDOR data leaks.
@@ -44,16 +50,16 @@
 
 ## 🏗️ Tech Stack & Architecture
 
-| Layer | Technologies |
-| :--- | :--- |
-| **Framework** | [Next.js 16.3 (App Router)](https://nextjs.org/) + [React 19](https://react.dev/) |
-| **Styling & UI** | [Tailwind CSS v4](https://tailwindcss.com/) + [Lucide Icons](https://lucide.dev/) + React Markdown |
-| **Database & ORM** | [PostgreSQL](https://www.postgresql.org/) + [Prisma ORM 7](https://www.prisma.io/) (`@prisma/adapter-pg`) |
-| **Authentication** | [Clerk Auth](https://clerk.com/) (`@clerk/nextjs`) + Anonymous Token Cookies |
-| **Security & Guardrails** | [Arcjet](https://arcjet.com/) (`@arcjet/next`) |
-| **Feature Flags** | [Statsig](https://statsig.com/) (`statsig-node`) |
-| **Testing** | [Playwright E2E](https://playwright.dev/) + ESLint 9 + Prettier |
-| **Package Manager** | `pnpm 10` |
+| Layer                     | Technologies                                                                                              |
+| :------------------------ | :-------------------------------------------------------------------------------------------------------- |
+| **Framework**             | [Next.js 16.3 (App Router)](https://nextjs.org/) + [React 19](https://react.dev/)                         |
+| **Styling & UI**          | [Tailwind CSS v4](https://tailwindcss.com/) + [Lucide Icons](https://lucide.dev/) + React Markdown        |
+| **Database & ORM**        | [PostgreSQL](https://www.postgresql.org/) + [Prisma ORM 7](https://www.prisma.io/) (`@prisma/adapter-pg`) |
+| **Authentication**        | [Clerk Auth](https://clerk.com/) (`@clerk/nextjs`) + Anonymous Token Cookies                              |
+| **Security & Guardrails** | [Arcjet](https://arcjet.com/) (`@arcjet/next`)                                                            |
+| **Feature Flags**         | [Statsig](https://statsig.com/) (`statsig-node`)                                                          |
+| **Testing**               | [Playwright E2E](https://playwright.dev/) + ESLint 9 + Prettier                                           |
+| **Package Manager**       | `pnpm 10`                                                                                                 |
 
 ---
 
@@ -92,7 +98,7 @@ swag-flow/
 │   ├── export.spec.ts          # Export Engine E2E Tests
 │   ├── security-idor.spec.ts   # Security & IDOR Defense Tests
 │   ├── shareModal.spec.ts      # Social Share Modal E2E Tests
-│   └── voting-leaderboard.spec # Voting & Leaderboard E2E Tests
+│   └── voting-leaderboard.spec.ts # Voting & Leaderboard E2E Tests
 ├── prisma/                     # Database Schema & Migrations
 │   └── schema.prisma           # Prisma Data Models
 ├── playwright.config.ts        # Playwright Test Runner Config

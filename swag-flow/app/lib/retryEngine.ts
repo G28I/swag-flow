@@ -112,141 +112,137 @@ export function clearAllCooldowns(): void {
 }
 
 /**
- * Calculates exponential backoff with full jitter to eliminate thundering herd retry storms.
- * Formula: delay = random(0, min(maxDelay, baseDelay * 2^attempt))
+ * Parses HTTP Retry-After header value into milliseconds.
+ * Supports both delta-seconds (e.g. "12") and HTTP-date strings (e.g. "Wed, 21 Oct 2026 07:28:00 GMT").
  */
-export function calculateJitteredBackoff(
-  attempt: number,
-  baseDelayMs = DEFAULT_RETRY_CONFIG.baseDelayMs,
-  maxDelayMs = DEFAULT_RETRY_CONFIG.maxDelayMs,
-  randomFn: () => number = Math.random
-): number {
-  const exponential = baseDelayMs * Math.pow(2, attempt);
-  const upperBound = Math.min(maxDelayMs, exponential);
-  const delay = Math.floor(randomFn() * upperBound);
-  return Math.max(0, Math.min(maxDelayMs, delay));
-}
-
-/**
- * Parses HTTP 'Retry-After' header (seconds integer or HTTP-date string) into milliseconds.
- * Clamps result to maxCooldownMs to prevent infinite server delays.
- */
-export function parseRetryAfterHeader(
-  headerValue: string | null | undefined,
-  maxCooldownMs = DEFAULT_RETRY_CONFIG.maxCooldownMs
-): number | null {
-  if (!headerValue) return null;
+export function parseRetryAfterHeader(headerValue: string | null | undefined, maxCooldownMs: number = 60000): number | null {
+  if (!headerValue || typeof headerValue !== "string") return null;
   const trimmed = headerValue.trim();
   if (!trimmed) return null;
 
-  // 1. Integer seconds format (e.g., "12")
-  const seconds = parseInt(trimmed, 10);
-  if (!isNaN(seconds) && seconds >= 0) {
-    const ms = seconds * 1000;
-    return Math.min(maxCooldownMs, ms);
+  // 1. Numeric seconds
+  const numericSeconds = Number(trimmed);
+  if (!isNaN(numericSeconds) && numericSeconds >= 0) {
+    const ms = numericSeconds * 1000;
+    return Math.min(ms, maxCooldownMs);
   }
 
-  // 2. HTTP-date format (e.g., "Wed, 21 Oct 2026 07:28:00 GMT")
+  // 2. HTTP-Date
   const dateMs = Date.parse(trimmed);
   if (!isNaN(dateMs)) {
-    const diff = dateMs - Date.now();
-    if (diff <= 0) return 0;
-    return Math.min(maxCooldownMs, diff);
+    const deltaMs = dateMs - Date.now();
+    return Math.min(Math.max(0, deltaMs), maxCooldownMs);
   }
 
   return null;
 }
 
 /**
- * Cancellation-aware abortable delay helper.
- * Immediately rejects/exits when signal.aborted is triggered.
+ * Calculates exponential backoff with full jitter to avoid thundering herd.
+ * Formula: random(0, min(maxDelayMs, baseDelayMs * 2^attempt))
  */
-export async function delayWithAbort(
-  delayMs: number,
-  signal?: AbortSignal
-): Promise<void> {
-  if (signal?.aborted) {
-    throw new RetryEngineError("Request aborted by client", "ABORTED");
-  }
+export function calculateJitteredBackoff(
+  attempt: number,
+  baseDelayMs: number = 500,
+  maxDelayMs: number = 8000,
+  randomFn: () => number = Math.random
+): number {
+  const expFactor = Math.pow(2, Math.max(0, attempt));
+  const maxTempDelay = Math.min(maxDelayMs, baseDelayMs * expFactor);
+  const rand = typeof randomFn === "function" ? randomFn() : Math.random();
+  return Math.floor(rand * maxTempDelay);
+}
 
-  if (delayMs <= 0) return;
+/**
+ * Helper to sleep with AbortSignal cancellation support.
+ */
+export function delayWithAbort(ms: number, signal?: AbortSignal | null): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      return reject(new RetryEngineError("Request aborted by client during retry delay", "ABORTED"));
+    }
 
-  return new Promise<void>((resolve, reject) => {
     let timer: NodeJS.Timeout | null = null;
 
     const onAbort = () => {
       if (timer) clearTimeout(timer);
-      signal?.removeEventListener("abort", onAbort);
       reject(new RetryEngineError("Request aborted by client during retry delay", "ABORTED"));
     };
-
-    timer = setTimeout(() => {
-      signal?.removeEventListener("abort", onAbort);
-      resolve();
-    }, delayMs);
 
     if (signal) {
       signal.addEventListener("abort", onAbort, { once: true });
     }
+
+    timer = setTimeout(() => {
+      if (signal) {
+        signal.removeEventListener("abort", onAbort);
+      }
+      resolve();
+    }, Math.max(0, ms));
   });
 }
 
-export interface ExecuteRetryOptions extends RetryConfig {
-  cooldownKey?: string;
-  signal?: AbortSignal;
-  streamStarted?: boolean; // Streaming safety flag: true if body bytes have already been consumed
-  onBackoff?: (attempt: number, delayMs: number) => void;
-}
-
 /**
- * Wraps OpenRouter requests in exponential backoff retries with full jitter,
- * cancellation awareness, Retry-After header parsing, and pre-stream safety rules.
+ * Wraps an async fetch/action call with rate-limit retry, full-jitter exponential backoff,
+ * pre-call cooldown checks, and cancellation support.
  */
 export async function executeWithRetryAndBackoff<T>(
-  action: (attempt: number) => Promise<T>,
-  options: ExecuteRetryOptions = {}
+  action: (attemptIndex: number) => Promise<T>,
+  options: {
+    maxRetries?: number;
+    baseDelayMs?: number;
+    maxDelayMs?: number;
+    maxCooldownMs?: number;
+    cooldownKey?: string;
+    signal?: AbortSignal | null;
+    randomFn?: () => number;
+    onBackoff?: (attempt: number, delayMs: number) => void;
+    streamStarted?: boolean;
+  } = {}
 ): Promise<T> {
   const {
     maxRetries = DEFAULT_RETRY_CONFIG.maxRetries,
     baseDelayMs = DEFAULT_RETRY_CONFIG.baseDelayMs,
     maxDelayMs = DEFAULT_RETRY_CONFIG.maxDelayMs,
     maxCooldownMs = DEFAULT_RETRY_CONFIG.maxCooldownMs,
-    randomFn = Math.random,
     cooldownKey,
     signal,
-    streamStarted = false,
+    randomFn = Math.random,
     onBackoff,
+    streamStarted = false,
   } = options;
 
-  // 1. Check if provider/model is already on cooldown
+  // 1. Cancellation check before starting initial attempt
+  if (signal?.aborted) {
+    throw new RetryEngineError("Request aborted by client before attempt", "ABORTED");
+  }
+
+  // 2. Pre-call cooldown check
   if (cooldownKey && isModelOnCooldown(cooldownKey)) {
-    const remaining = getCooldownRemaining(cooldownKey);
+    const remainingMs = getCooldownRemaining(cooldownKey);
     throw new RetryEngineError(
-      `Model/Provider '${cooldownKey}' is currently on rate limit cooldown (${remaining}ms remaining). Skipping for fallback.`,
+      `Model/provider "${cooldownKey}" is currently on rate-limit cooldown. Please retry in ${Math.ceil(remainingMs / 1000)}s.`,
       "RATE_LIMITED",
       429,
-      remaining,
+      remainingMs,
       cooldownKey
     );
   }
 
-  let lastError: any = null;
+  let lastError: unknown = null;
 
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
-    // 2. Cancellation check before starting attempt
     if (signal?.aborted) {
-      throw new RetryEngineError("Request aborted by client before attempt", "ABORTED");
+      throw new RetryEngineError("Request aborted by client", "ABORTED");
     }
 
     try {
       const result = await action(attempt);
 
-      // Inspect Response status for 429
-      if (result && typeof result === "object" && "status" in result && typeof (result as any).status === "number") {
+      if (result && typeof result === "object" && "status" in result && typeof (result as Record<string, unknown>).status === "number") {
         const res = result as unknown as Response;
 
         if (res.status === 429) {
-          // Streaming Safety Rule: Never retry a request after body stream consumption has started
           if (streamStarted) {
             throw new RetryEngineError(
               "Rate limit 429 received after stream body consumption started. Replay suppressed for stream safety.",
@@ -266,7 +262,6 @@ export async function executeWithRetryAndBackoff<T>(
           }
 
           if (attempt < maxRetries) {
-            // Determine delay: prefer server-provided Retry-After delay if valid, else calculate full jitter backoff
             const delayMs =
               serverRetryAfterMs !== null && serverRetryAfterMs > 0
                 ? Math.min(maxDelayMs, serverRetryAfterMs)
@@ -276,9 +271,16 @@ export async function executeWithRetryAndBackoff<T>(
               onBackoff(attempt, delayMs);
             }
 
-            // Cancellation-aware wait
             await delayWithAbort(delayMs, signal);
             continue;
+          }
+
+          if (cooldownKey) {
+            const existingReset = cooldownRegistry.get(cooldownKey);
+            const remaining = existingReset ? existingReset - Date.now() : 0;
+            if (!existingReset || remaining < cooldownMs) {
+              registerCooldown(cooldownKey, cooldownMs);
+            }
           }
 
           throw new RetryEngineError(
@@ -291,23 +293,32 @@ export async function executeWithRetryAndBackoff<T>(
         }
       }
 
+      // On successful response, remove any active cooldown for this model key
+      if (cooldownKey) {
+        cooldownRegistry.delete(cooldownKey);
+      }
+
       return result;
-    } catch (err: any) {
+    } catch (err: unknown) {
       lastError = err;
 
-      // Immediately propagate cancellation errors without retrying or fallback errors
       if (err instanceof RetryEngineError && err.kind === "ABORTED") {
         throw err;
       }
-      if (signal?.aborted || err.name === "AbortError" || err.message?.includes("aborted")) {
+
+      const errObj = err as Record<string, unknown> | null;
+      const errName = typeof errObj?.name === "string" ? errObj.name : "";
+      const errMessage = typeof errObj?.message === "string" ? errObj.message : "";
+      const errStatus = typeof errObj?.status === "number" ? errObj.status : typeof errObj?.statusCode === "number" ? errObj.statusCode : null;
+
+      if (signal?.aborted || errName === "AbortError" || errMessage.includes("aborted")) {
         throw new RetryEngineError("Request aborted by client", "ABORTED");
       }
 
       const is429 =
-        err?.status === 429 ||
-        err?.statusCode === 429 ||
+        errStatus === 429 ||
         (err instanceof RetryEngineError && err.status === 429) ||
-        err?.message?.includes("429");
+        errMessage.includes("429");
 
       if (is429) {
         if (streamStarted) {
@@ -320,40 +331,40 @@ export async function executeWithRetryAndBackoff<T>(
           );
         }
 
+        const cooldownMs = (err as RetryEngineError)?.retryAfterMs ?? 10000;
         if (cooldownKey) {
-          registerCooldown(cooldownKey, 10000);
+          registerCooldown(cooldownKey, cooldownMs);
         }
 
         if (attempt < maxRetries) {
           const delayMs = calculateJitteredBackoff(attempt, baseDelayMs, maxDelayMs, randomFn);
+          if (onBackoff) {
+            onBackoff(attempt, delayMs);
+          }
           await delayWithAbort(delayMs, signal);
           continue;
         }
 
         throw new RetryEngineError(
-          `Rate limit 429 persisted after ${maxRetries} retries`,
+          `Rate limit 429 persisted after ${maxRetries + 1} attempts (${maxRetries} retries). Exiting for model fallback.`,
           "RETRY_EXHAUSTED",
           429,
-          10000,
+          cooldownMs,
           cooldownKey
         );
       }
 
-      // Non-429 errors (401, 403, 400, 500, network errors) are NOT retried
-      throw err instanceof RetryEngineError
-        ? err
-        : new RetryEngineError(
-            err.message || "Non-retryable network error",
-            "NON_RETRYABLE",
-            err.status,
-            null,
-            cooldownKey
-          );
+      if (attempt === maxRetries) {
+        throw err;
+      }
+
+      const delayMs = calculateJitteredBackoff(attempt, baseDelayMs, maxDelayMs, randomFn);
+      if (onBackoff) {
+        onBackoff(attempt, delayMs);
+      }
+      await delayWithAbort(delayMs, signal);
     }
   }
 
-  throw (
-    lastError ||
-    new RetryEngineError("Failed after bounded retries", "RETRY_EXHAUSTED", 429, null, cooldownKey)
-  );
+  throw lastError || new Error("Retry operation failed");
 }

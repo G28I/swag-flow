@@ -1,12 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import prisma from "@/app/lib/prisma";
+import {
+  getEffectiveOwnerId,
+  isThreadOwner,
+} from "@/app/lib/authHelper";
 
 const isClerkConfigured = Boolean(
   process.env.CLERK_SECRET_KEY &&
-  process.env.CLERK_SECRET_KEY !== "sk_test_placeholder" &&
-  process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY &&
-  process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY !== "pk_test_placeholder"
+    process.env.CLERK_SECRET_KEY !== "sk_test_placeholder" &&
+    process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY &&
+    process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY !== "pk_test_placeholder"
 );
 
 export async function POST(req: NextRequest) {
@@ -31,8 +35,6 @@ export async function POST(req: NextRequest) {
       userId = "mock_user_123";
     }
 
-    const effectiveUserId = userId || "anonymous";
-
     // 2. Fetch source thread and verify authorization
     const sourceThread = await prisma.thread.findUnique({
       where: { id: sourceThreadId },
@@ -47,23 +49,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Source thread not found" }, { status: 404 });
     }
 
-    const normalizedAnonToken = anonToken && typeof anonToken === "string" ? anonToken.trim() : "";
-    const expectedAnonOwner = normalizedAnonToken
-      ? normalizedAnonToken.startsWith("anon_")
-        ? normalizedAnonToken
-        : `anon_${normalizedAnonToken}`
-      : "";
-
-    const isOwner =
-      Boolean(userId && sourceThread.userId === userId) ||
-      Boolean(
-        normalizedAnonToken &&
-          sourceThread.userId.startsWith("anon_") &&
-          sourceThread.userId === expectedAnonOwner
-      ) ||
-      (process.env.NODE_ENV === "development" && sourceThread.userId === "mock_user_123");
-
-    if (!isOwner) {
+    if (!isThreadOwner(sourceThread.userId, userId, anonToken)) {
       return NextResponse.json({ error: "Unauthorized to fork thread" }, { status: 403 });
     }
 
@@ -73,7 +59,6 @@ export async function POST(req: NextRequest) {
       const promptIndex = sourceThread.messages.findIndex((m) => m.id === upToTurnPromptId);
       if (promptIndex !== -1) {
         // Include the target user prompt and any assistant replies associated with it
-        const targetPrompt = sourceThread.messages[promptIndex];
         const nextUserPromptIndex = sourceThread.messages.findIndex(
           (m, idx) => idx > promptIndex && m.role === "user"
         );
@@ -83,48 +68,61 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // 4. Create new branched thread
     const cleanTitle = sourceThread.title.startsWith("Fork of ")
       ? sourceThread.title
       : `Fork of ${sourceThread.title}`;
 
-    const ownerId = !userId && normalizedAnonToken ? expectedAnonOwner : effectiveUserId;
+    const ownerId = getEffectiveOwnerId(userId, anonToken) || "anonymous";
 
-    const newThread = await prisma.thread.create({
-      data: {
-        title: cleanTitle,
-        userId: ownerId,
-        parentThreadId: sourceThreadId,
+    // 4. Wrap new thread creation and message cloning loop in a single Prisma interactive transaction
+    const newThread = await prisma.$transaction(
+      async (tx) => {
+        const createdThread = await tx.thread.create({
+          data: {
+            title: cleanTitle,
+            userId: ownerId,
+            parentThreadId: sourceThreadId,
+          },
+        });
+
+        const messageIdMap = new Map<string, string>();
+
+        for (const oldMsg of messagesToCopy) {
+          const newParentId = oldMsg.parentId ? messageIdMap.get(oldMsg.parentId) || null : null;
+
+          const newMsg = await tx.message.create({
+            data: {
+              role: oldMsg.role,
+              content: oldMsg.content,
+              model: oldMsg.model,
+              actualModel: oldMsg.actualModel || null,
+              threadId: createdThread.id,
+              parentId: newParentId,
+              latency: oldMsg.latency,
+              ttft: oldMsg.ttft,
+              tokensPerSec: oldMsg.tokensPerSec,
+              tokenCount: oldMsg.tokenCount,
+              promptTokens: oldMsg.promptTokens || null,
+              completionTokens: oldMsg.completionTokens || null,
+              reasoningTokens: oldMsg.reasoningTokens || null,
+              cachedTokens: oldMsg.cachedTokens || null,
+              cost: oldMsg.cost,
+              costUsd: oldMsg.costUsd || null,
+              costSource: oldMsg.costSource || null,
+              systemPrompt: oldMsg.systemPrompt,
+              temperature: oldMsg.temperature,
+              topP: oldMsg.topP,
+              maxTokens: oldMsg.maxTokens,
+            },
+          });
+
+          messageIdMap.set(oldMsg.id, newMsg.id);
+        }
+
+        return createdThread;
       },
-    });
-
-    // 5. Clone messages preserving parent-child replies mapping
-    const messageIdMap = new Map<string, string>();
-
-    for (const oldMsg of messagesToCopy) {
-      const newParentId = oldMsg.parentId ? messageIdMap.get(oldMsg.parentId) || null : null;
-
-      const newMsg = await prisma.message.create({
-        data: {
-          role: oldMsg.role,
-          content: oldMsg.content,
-          model: oldMsg.model,
-          threadId: newThread.id,
-          parentId: newParentId,
-          latency: oldMsg.latency,
-          ttft: oldMsg.ttft,
-          tokensPerSec: oldMsg.tokensPerSec,
-          tokenCount: oldMsg.tokenCount,
-          cost: oldMsg.cost,
-          systemPrompt: oldMsg.systemPrompt,
-          temperature: oldMsg.temperature,
-          topP: oldMsg.topP,
-          maxTokens: oldMsg.maxTokens,
-        },
-      });
-
-      messageIdMap.set(oldMsg.id, newMsg.id);
-    }
+      { timeout: 30000 }
+    );
 
     return NextResponse.json({
       threadId: newThread.id,

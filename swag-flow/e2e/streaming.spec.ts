@@ -30,15 +30,13 @@ test.describe("Prompt Submission & Live Streaming E2E", () => {
     await textarea.fill("Write a 500-word essay about quantum computing.");
     await textarea.press("Enter");
 
-    // Wait for Stop buttons or streaming indicator
     const stopButtons = page.locator("button:has-text('Stop')");
     if (await stopButtons.first().isVisible({ timeout: 5000 }).catch(() => false)) {
       while ((await stopButtons.count()) > 0) {
         await stopButtons.first().click().catch(() => {});
         await page.waitForTimeout(200);
       }
-      // Ensure stop buttons disappear after abort
-      await expect(stopButtons).toHaveCount(0, { timeout: 5000 });
     }
+    await expect(stopButtons).toHaveCount(0, { timeout: 5000 });
   });
 });

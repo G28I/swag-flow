@@ -80,13 +80,17 @@ export default function AppShell({ children, breadcrumb = "Arena" }: AppShellPro
               const threadIds = parsed.map((t) => t.id).filter(Boolean);
               if (threadIds.length > 0) {
                 const anonToken = typeof window !== "undefined" ? localStorage.getItem("swag_flow_anon_token") || "" : "";
-                await fetch("/api/arena/threads/sync", {
+                const res = await fetch("/api/arena/threads/sync", {
                   method: "POST",
                   headers: { "Content-Type": "application/json" },
                   body: JSON.stringify({ threadIds, anonToken }),
                 });
+                if (res.ok) {
+                  localStorage.removeItem("swag_flow_anon_threads");
+                }
+              } else {
+                localStorage.removeItem("swag_flow_anon_threads");
               }
-              localStorage.removeItem("swag_flow_anon_threads");
             } catch (syncErr) {
               console.warn("Notice: Local thread migration skipped:", syncErr);
             }
@@ -148,11 +152,7 @@ export default function AppShell({ children, breadcrumb = "Arena" }: AppShellPro
   };
 
   const handleNewThread = () => {
-    if (typeof window !== "undefined") {
-      window.location.href = "/";
-    } else {
-      router.push("/");
-    }
+    router.push("/");
   };
 
   const handleDeleteThread = async (e: React.MouseEvent, threadId: string) => {
@@ -182,7 +182,7 @@ export default function AppShell({ children, breadcrumb = "Arena" }: AppShellPro
     if (typeof window !== "undefined") {
       const params = new URLSearchParams(window.location.search);
       if (params.get("thread") === threadId) {
-        window.location.href = "/";
+        router.push("/");
       }
     }
   };

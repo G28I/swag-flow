@@ -7,17 +7,19 @@ generator client {
 
 datasource db {
   provider = "postgresql"
+  url      = env("DATABASE_URL")
 }
 
 model Thread {
   id             String    @id @default(uuid())
-  title          String    @default("New Thread")
-  userId         String // Clerk user ID
-  parentThreadId String? // Optional parent thread if branched
-  parentThread   Thread?   @relation("ThreadBranches", fields: [parentThreadId], references: [id], onDelete: SetNull)
-  branches       Thread[]  @relation("ThreadBranches")
+  title          String
+  userId         String    // Clerk user ID or anonymous ownership token (anon_<token>)
+  parentThreadId String?   // Pointer to original thread if this is a branched/forked thread
+  parentThread   Thread?   @relation("ThreadForks", fields: [parentThreadId], references: [id], onDelete: SetNull)
+  forks          Thread[]  @relation("ThreadForks")
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
+
   messages       Message[]
   votes          Vote[]
 
@@ -26,56 +28,64 @@ model Thread {
 }
 
 model Message {
-  id       String    @id @default(uuid())
-  role     String // "user" or "assistant"
-  content  String
-  model    String? // null for user, e.g. "google/gemini-2.5-flash:free" for assistant
-  threadId String
-  thread   Thread    @relation(fields: [threadId], references: [id], onDelete: Cascade)
-  parentId String? // User message this is replying to (for assistant messages)
-  parent   Message?  @relation("MessageReplies", fields: [parentId], references: [id], onDelete: Cascade)
-  replies  Message[] @relation("MessageReplies")
+  id               String    @id @default(uuid())
+  role             String    // "user" | "assistant" | "system"
+  content          String    @db.Text
+  model            String?   // Model identifier (null for user messages)
+  actualModel      String?   // Realized model if fallback occurred
+  threadId         String
+  thread           Thread    @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  parentId         String?   // Pointer to preceding message in thread graph
+  parent           Message?  @relation("MessageHierarchy", fields: [parentId], references: [id], onDelete: SetNull)
+  children         Message[] @relation("MessageHierarchy")
 
-  // Performance metrics for assistant responses
-  latency          Float? // total latency in seconds
-  ttft             Float? // time-to-first-token in seconds
-  tokensPerSec     Float?
-  tokenCount       Int?
-  cost             Float?   @default(0.0) // Cost will always be $0.0000 for free tier
+  // Hyperparameters
+  systemPrompt     String?   @db.Text
+  temperature      Float?
+  topP             Float?
+  maxTokens        Int?
+
+  // Performance Metrics
+  latency          Float?    // Total response generation time in seconds
+  ttft             Float?    // Time to First Token in seconds
+  tokensPerSec     Float?    // Throughput in tokens/second
+  tokenCount       Int?      // Total generation output tokens
+
+  // Token Details
   promptTokens     Int?
   completionTokens Int?
   reasoningTokens  Int?
   cachedTokens     Int?
-  costUsd          Float?
-  costSource       String? // "openrouter" | "calculated" | "estimated" | "unknown"
-  actualModel      String? // Model slug actually used if fallback occurred
 
-  // Hyperparameters & System Configuration
-  systemPrompt String?
-  temperature  Float?
-  topP         Float?
-  maxTokens    Int?
+  // Cost Insights
+  cost             Float?    // Legacy cost alias
+  costUsd          Float?    // Calculated cost in USD
+  costSource       String?   // "official" | "openrouter_default" | "fallback"
 
-  createdAt   DateTime @default(now())
-  promptVotes Vote[]   @relation("PromptVotes")
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  promptVotes      Vote[]    @relation("PromptVotes")
 
   @@index([threadId])
   @@index([parentId])
+  @@index([role])
+  @@index([model])
 }
 
 model Vote {
   id             String   @id @default(uuid())
-  userId         String // Clerk user ID who voted
+  userId         String   // Clerk user ID or anonymous ownership token who voted
   threadId       String
   thread         Thread   @relation(fields: [threadId], references: [id], onDelete: Cascade)
-  promptId       String // The user message ID that triggered this turn
+  promptId       String   // The user message ID that triggered this turn
   prompt         Message  @relation("PromptVotes", fields: [promptId], references: [id], onDelete: Cascade)
-  votedMessageId String? // The winning assistant message ID (null if tie/skip)
-  votedModel     String? // The winning model identifier (null if tie/skip)
-  models         String[] // All models that participated in this turn (e.g. ["google/gemini-2.5-flash:free", "meta-llama/llama-3-8b-instruct:free"])
+  votedMessageId String?  // The winning assistant message ID (null if tie/skip)
+  votedModel     String?  // The winning model identifier (null if tie/skip)
+  models         String[] // All models that participated in this turn
   createdAt      DateTime @default(now())
 
-  @@index([userId, promptId])
+  @@unique([userId, promptId])
   @@index([threadId])
   @@index([promptId])
   @@index([votedModel])

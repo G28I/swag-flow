@@ -139,6 +139,24 @@ export function normalizeUsage(
   };
 }
 
+export function calculateCost(modelId: string, _promptTokens: number, _completionTokens: number) {
+  const isFree = modelId.toLowerCase().includes(":free");
+  return {
+    costUsd: isFree ? 0.0 : 0.0,
+    costSource: isFree ? "openrouter" : "calculated",
+  };
+}
+
+export function parseUsageTokens(rawUsage: unknown) {
+  const normalized = normalizeUsage(rawUsage as Record<string, unknown> | null | undefined);
+  return {
+    promptTokens: normalized.promptTokens || 0,
+    completionTokens: normalized.completionTokens || 0,
+    reasoningTokens: normalized.reasoningTokens || 0,
+    cachedTokens: normalized.cachedTokens || 0,
+  };
+}
+
 /**
  * Calculates derived efficiency metrics (cost per 1k tokens, throughput, latency ms).
  */

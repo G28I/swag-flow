@@ -1452,16 +1452,26 @@ function ArenaContent() {
                       {/* Render Semantic Diff Visualizer Drawer when active */}
                       {diffTurnId === turn.id && (
                         <DiffViewer
-                          models={turn.models.map((m, idx) => {
-                            const slot = idx === 0 ? "modelA" : idx === 1 ? "modelB" : "modelC";
-                            const resp = turn.responses[slot as keyof typeof turn.responses];
-                            return {
-                              key: slot,
-                              name: m.name || m.id,
-                              text: resp?.text || "",
-                            };
-                          })}
+                          isOpen={diffTurnId === turn.id}
                           onClose={() => setDiffTurnId(null)}
+                          baseModel={
+                            turn.models[0]
+                              ? {
+                                  id: turn.models[0].id,
+                                  name: turn.models[0].name || turn.models[0].id,
+                                  responseText: turn.responses.modelA?.text || "",
+                                }
+                              : null
+                          }
+                          compareModel={
+                            turn.models[1]
+                              ? {
+                                  id: turn.models[1].id,
+                                  name: turn.models[1].name || turn.models[1].id,
+                                  responseText: turn.responses.modelB?.text || "",
+                                }
+                              : null
+                          }
                         />
                       )}
 
@@ -1516,8 +1526,10 @@ function ArenaContent() {
                     {/* Render Hyperparameter Drawer when active */}
                     {showHyperparameterDrawer && (
                       <HyperparameterDrawer
+                        isOpen={showHyperparameterDrawer}
                         config={hyperparameters}
                         onChange={setHyperparameters}
+                        onReset={() => setHyperparameters(DEFAULT_HYPERPARAMETERS)}
                         onClose={() => setShowHyperparameterDrawer(false)}
                       />
                     )}

@@ -91,7 +91,7 @@ export function buildExportReport(params: {
         modelId: modelObj.id,
         modelName: modelObj.name || modelObj.id,
         text: resp?.text || "",
-        error: resp?.error || null,
+        error: resp?.error ? "Response generation encountered an error" : null,
         metrics: mObj
           ? {
               ttft: typeof mObj.ttft === "number" ? mObj.ttft : null,
@@ -290,7 +290,7 @@ export function generatePrintableHTML(report: ExportReport): string {
             <div class="model-box">
               <h4>🤖 ${modelName}</h4>
               ${metricsHTML}
-              <pre className="content">${responseText}</pre>
+              <pre class="content">${responseText}</pre>
             </div>
           `;
         })

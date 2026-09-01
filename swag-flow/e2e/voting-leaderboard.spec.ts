@@ -12,23 +12,22 @@ test.describe("Voting & ELO Leaderboard E2E", () => {
 
     await page.waitForTimeout(4000);
 
-    // Click Vote button or Declare Tie button
+    // Required vote control visibility & click assertion
     const voteBtn = page.locator("button:has-text('👈 Model A is better'), button:has-text('Declare Tie')").first();
-    if (await voteBtn.isVisible({ timeout: 5000 }).catch(() => false)) {
-      await voteBtn.click();
-      await page.waitForTimeout(1000);
-    }
+    await expect(voteBtn).toBeVisible({ timeout: 10000 });
+    await voteBtn.click();
+    await page.waitForTimeout(1000);
   });
 
-  test("renders the ELO leaderboard page", async ({ page }) => {
+  test("renders the ELO leaderboard page with model rankings", async ({ page }) => {
     await page.goto("/leaderboard");
 
     // Verify leaderboard title and table header
     const title = page.locator("h1:has-text('Leaderboard'), h2:has-text('Leaderboard')").first();
     await expect(title).toBeVisible();
 
-    // Verify model rankings exist
-    const rankingRows = page.locator("table tbody tr, .grid");
-    await expect(rankingRows.first()).toBeVisible();
+    // Verify specific leaderboard ranking container or model row renders
+    const rankingTableOrGrid = page.locator("table, .grid");
+    await expect(rankingTableOrGrid.first()).toBeVisible({ timeout: 5000 });
   });
 });

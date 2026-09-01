@@ -61,9 +61,11 @@ export function ShareModal({
   };
 
   const handleInstagramShare = async () => {
-    await copyToClipboard(canonicalUrl);
-    setInstagramFeedback(true);
-    setTimeout(() => setInstagramFeedback(false), 3500);
+    const success = await copyToClipboard(canonicalUrl);
+    if (success) {
+      setInstagramFeedback(true);
+      setTimeout(() => setInstagramFeedback(false), 3500);
+    }
   };
 
   const handleNativeShare = async () => {

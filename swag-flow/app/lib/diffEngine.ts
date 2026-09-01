@@ -26,59 +26,88 @@ export interface DiffStats {
  */
 export function tokenize(text: string): string[] {
   if (!text) return [];
-  // Tokenize by word characters/code symbols vs whitespace vs punctuation
   const regex = /([a-zA-Z0-9_$]+|\s+|[^\s\w])/g;
   const matches = text.match(regex);
   return matches || [text];
 }
 
 /**
- * Computes Myers Longest Common Subsequence (LCS) diff on token arrays
+ * Computes Myers / LCS token diff with common prefix/suffix trimming and O(n*m) safety cap
  */
 export function computeTokenDiff(oldText: string, newText: string): DiffToken[] {
   const oldTokens = tokenize(oldText);
   const newTokens = tokenize(newText);
 
-  const n = oldTokens.length;
-  const m = newTokens.length;
+  let start = 0;
+  while (
+    start < oldTokens.length &&
+    start < newTokens.length &&
+    oldTokens[start] === newTokens[start]
+  ) {
+    start++;
+  }
 
-  // Build LCS matrix
-  const matrix: number[][] = Array.from({ length: n + 1 }, () =>
-    Array(m + 1).fill(0)
-  );
+  let oldEnd = oldTokens.length - 1;
+  let newEnd = newTokens.length - 1;
+  while (
+    oldEnd >= start &&
+    newEnd >= start &&
+    oldTokens[oldEnd] === newTokens[newEnd]
+  ) {
+    oldEnd--;
+    newEnd--;
+  }
 
-  for (let i = 1; i <= n; i++) {
-    for (let j = 1; j <= m; j++) {
-      if (oldTokens[i - 1] === newTokens[j - 1]) {
-        matrix[i][j] = matrix[i - 1][j - 1] + 1;
-      } else {
-        matrix[i][j] = Math.max(matrix[i - 1][j], matrix[i][j - 1]);
+  const prefixTokens = oldTokens.slice(0, start).map((val) => ({ value: val, type: "unchanged" as DiffType }));
+  const suffixTokens = oldTokens.slice(oldEnd + 1).map((val) => ({ value: val, type: "unchanged" as DiffType }));
+
+  const midOld = oldTokens.slice(start, oldEnd + 1);
+  const midNew = newTokens.slice(start, newEnd + 1);
+
+  const n = midOld.length;
+  const m = midNew.length;
+
+  let midDiff: DiffToken[] = [];
+
+  // Safety cap to prevent unbounded O(n*m) memory matrix construction for huge texts
+  if (n * m > 100000) {
+    midOld.forEach((val) => midDiff.push({ value: val, type: "deleted" }));
+    midNew.forEach((val) => midDiff.push({ value: val, type: "added" }));
+  } else if (n > 0 || m > 0) {
+    const matrix: number[][] = Array.from({ length: n + 1 }, () => Array(m + 1).fill(0));
+
+    for (let i = 1; i <= n; i++) {
+      for (let j = 1; j <= m; j++) {
+        if (midOld[i - 1] === midNew[j - 1]) {
+          matrix[i][j] = matrix[i - 1][j - 1] + 1;
+        } else {
+          matrix[i][j] = Math.max(matrix[i - 1][j], matrix[i][j - 1]);
+        }
+      }
+    }
+
+    let i = n;
+    let j = m;
+    while (i > 0 || j > 0) {
+      if (i > 0 && j > 0 && midOld[i - 1] === midNew[j - 1]) {
+        midDiff.unshift({ value: midOld[i - 1], type: "unchanged" });
+        i--;
+        j--;
+      } else if (j > 0 && (i === 0 || matrix[i][j - 1] >= matrix[i - 1][j])) {
+        midDiff.unshift({ value: midNew[j - 1], type: "added" });
+        j--;
+      } else if (i > 0 && (j === 0 || matrix[i][j - 1] < matrix[i - 1][j])) {
+        midDiff.unshift({ value: midOld[i - 1], type: "deleted" });
+        i--;
       }
     }
   }
 
-  // Backtrack to construct diff
-  let i = n;
-  let j = m;
-  const result: DiffToken[] = [];
+  const rawDiff = [...prefixTokens, ...midDiff, ...suffixTokens];
 
-  while (i > 0 || j > 0) {
-    if (i > 0 && j > 0 && oldTokens[i - 1] === newTokens[j - 1]) {
-      result.unshift({ value: oldTokens[i - 1], type: "unchanged" });
-      i--;
-      j--;
-    } else if (j > 0 && (i === 0 || matrix[i][j - 1] >= matrix[i - 1][j])) {
-      result.unshift({ value: newTokens[j - 1], type: "added" });
-      j--;
-    } else if (i > 0 && (j === 0 || matrix[i][j - 1] < matrix[i - 1][j])) {
-      result.unshift({ value: oldTokens[i - 1], type: "deleted" });
-      i--;
-    }
-  }
-
-  // Group contiguous tokens of the same type for optimal DOM rendering
+  // Group contiguous tokens of the same type for DOM efficiency
   const grouped: DiffToken[] = [];
-  for (const token of result) {
+  for (const token of rawDiff) {
     if (grouped.length > 0 && grouped[grouped.length - 1].type === token.type) {
       grouped[grouped.length - 1].value += token.value;
     } else {
@@ -99,9 +128,7 @@ export function computeLineDiff(oldText: string, newText: string): DiffLine[] {
   const n = oldLines.length;
   const m = newLines.length;
 
-  const matrix: number[][] = Array.from({ length: n + 1 }, () =>
-    Array(m + 1).fill(0)
-  );
+  const matrix: number[][] = Array.from({ length: n + 1 }, () => Array(m + 1).fill(0));
 
   for (let i = 1; i <= n; i++) {
     for (let j = 1; j <= m; j++) {
@@ -154,10 +181,14 @@ export function computeLineDiff(oldText: string, newText: string): DiffLine[] {
 }
 
 /**
- * Calculates diff statistics and semantic similarity percentage
+ * Calculates diff statistics, allowing reuse of precomputed token diffs
  */
-export function calculateDiffStats(oldText: string, newText: string): DiffStats {
-  const tokens = computeTokenDiff(oldText, newText);
+export function calculateDiffStats(
+  oldText: string,
+  newText: string,
+  precomputedTokens?: DiffToken[]
+): DiffStats {
+  const tokens = precomputedTokens || computeTokenDiff(oldText, newText);
   let addedWords = 0;
   let deletedWords = 0;
   let unchangedWords = 0;

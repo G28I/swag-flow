@@ -39,26 +39,31 @@ export async function GET() {
 
     const rawModels: OpenRouterModel[] = json.data;
 
-    // Filter for free models, excluding restricted agentic-harness-only models (e.g. thinkingmachines/*)
+    // Filter for free models with runtime type validation
     const freeModels = rawModels
-      .filter(
-        (m) =>
-          m.pricing &&
-          (m.pricing.prompt === "0" || parseFloat(m.pricing.prompt) === 0) &&
+      .filter((m) => {
+        if (!m || typeof m !== "object" || !m.id || typeof m.id !== "string") {
+          return false;
+        }
+        const promptPrice = m.pricing && typeof m.pricing.prompt === "string" ? m.pricing.prompt : "";
+        const isFreePrompt = promptPrice === "0" || parseFloat(promptPrice) === 0;
+
+        return (
+          isFreePrompt &&
           !m.id.startsWith("thinkingmachines/") &&
           !m.id.includes("inkling") &&
           !m.id.includes("ox-alpha") &&
           !m.id.includes("harness")
-      )
+        );
+      })
       .map((m) => ({
         id: m.id,
         name: m.name || m.id.split("/")[1] || m.id,
-        context_length: m.context_length || 0,
-        pricing: m.pricing,
+        context_length: typeof m.context_length === "number" ? m.context_length : 0,
+        pricing: m.pricing || { prompt: "0", completion: "0" },
       }))
       .sort((a, b) => b.context_length - a.context_length);
 
-    // If OpenRouter returns an empty list, throw error to trigger fallback
     if (freeModels.length === 0) {
       throw new Error("No free models returned from OpenRouter");
     }
@@ -88,7 +93,7 @@ export async function GET() {
         id: "qwen/qwen-2.5-coder-32b-instruct:free",
         name: "Qwen 2.5 Coder 32B (Free)",
         context_length: 32768,
-        pricing: { prompt: "0", completion: "0" },
+        pricing: { prompt: "0", pricing: { prompt: "0", completion: "0" } },
       },
     ].sort((a, b) => b.context_length - a.context_length);
 
