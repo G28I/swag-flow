@@ -6,11 +6,11 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
+    "postinstall": "prisma generate",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
     "lint": "eslint",
-    "format": "prettier --write .",
-    "prepare": "cd .. && npx --prefix swag-flow husky swag-flow/.husky"
+    "format": "prettier --write ."
   },
   "dependencies": {
     "@arcjet/next": "^1.10.0",
