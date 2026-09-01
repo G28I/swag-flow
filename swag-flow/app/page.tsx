@@ -509,15 +509,17 @@ function ArenaContent() {
       });
 
       if (!res.ok) {
-        throw new Error("Failed to record vote on backend API");
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.error || "Failed to record vote on backend API");
       }
 
       setTurns((prev) =>
         prev.map((t) => (t.id === turnId ? { ...t, winnerModel: modelSlot || "tie" } : t))
       );
-    } catch (err) {
+    } catch (err: unknown) {
       console.error("Voting error:", err);
-      setError("Failed to record vote. Please try again.");
+      const msg = err instanceof Error ? err.message : "Failed to record vote. Please try again.";
+      setError(msg);
     }
   };
 

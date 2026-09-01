@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import prisma from "@/app/lib/prisma";
-import { aj } from "@/app/lib/arcjet";
+import { voteAj } from "@/app/lib/arcjet";
 import { logStatsigEvent } from "@/app/lib/statsig";
 import { normalizeAnonToken, isThreadOwner } from "@/app/lib/authHelper";
 
@@ -43,8 +43,8 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 3. Arcjet protection (rate limiting, bot detection, shield)
-    const decision = await aj.protect(req, { userId: effectiveUserId, requested: 1 });
+    // 3. Dedicated Arcjet voting protection
+    const decision = await voteAj.protect(req, { userId: effectiveUserId });
     if (decision.isDenied()) {
       if (decision.reason.isRateLimit()) {
         return NextResponse.json(
