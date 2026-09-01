@@ -224,20 +224,23 @@ function ArenaContent() {
           },
         });
         if (!res.ok) {
-          setIsOwner(false);
           setTurns([]);
           try {
             localStorage.removeItem(targetKey);
           } catch {}
 
           if (res.status === 404) {
+            setIsOwner(false);
             setIsNotFound(true);
             setThreadTitle("Not Found");
           } else if (res.status === 403) {
+            setIsOwner(false);
             setThreadTitle("Access Denied");
           } else {
+            // Transient server error: do not mark as Access Denied / revoked ownership
+            setIsOwner(true);
             setThreadTitle("Error");
-            setError("Unable to verify thread ownership. Please try again.");
+            setError("Unable to load thread history due to a server error. Please try refreshing.");
           }
           return;
         }
@@ -388,9 +391,9 @@ function ArenaContent() {
       } catch (err) {
         console.error("Failed to load thread history:", err);
         if (!cancelled) {
-          setIsOwner(false);
+          setIsOwner(true);
           setTurns([]);
-          setError("Failed to verify thread ownership. Please check connection and try again.");
+          setError("Failed to load thread history due to a network error. Please check connection and try again.");
           try {
             localStorage.removeItem(targetKey);
           } catch {}
@@ -678,52 +681,9 @@ function ArenaContent() {
       }
     }
 
-    // 1. If currently streaming on any turn, flush and persist ALL active streams to that originating turn
-    if (streamingTurnId) {
-      const prevTurnId = streamingTurnId;
-
-      const flushedA = modelA.isStreaming ? modelA.abort() : modelA.text;
-      const flushedB = modelB.isStreaming ? modelB.abort() : modelB.text;
-      const flushedC = modelC.isStreaming ? modelC.abort() : modelC.text;
-
-      setTurns((prev) =>
-        prev.map((t) => {
-          if (t.id !== prevTurnId) return t;
-          return {
-            ...t,
-            responses: {
-              modelA: {
-                ...t.responses.modelA,
-                text: flushedA || modelA.text || t.responses.modelA.text,
-                error: modelA.error || t.responses.modelA.error,
-                metrics: modelA.metrics || t.responses.modelA.metrics,
-                isStreaming: false,
-                messageId: modelA.messageId || t.responses.modelA.messageId,
-              },
-              modelB: {
-                ...t.responses.modelB,
-                text: flushedB || modelB.text || t.responses.modelB.text,
-                error: modelB.error || t.responses.modelB.error,
-                metrics: modelB.metrics || t.responses.modelB.metrics,
-                isStreaming: false,
-                messageId: modelB.messageId || t.responses.modelB.messageId,
-              },
-              modelC: {
-                ...t.responses.modelC,
-                text: flushedC || modelC.text || t.responses.modelC.text,
-                error: modelC.error || t.responses.modelC.error,
-                metrics: modelC.metrics || t.responses.modelC.metrics,
-                isStreaming: false,
-                messageId: modelC.messageId || t.responses.modelC.messageId,
-              },
-            },
-          };
-        })
-      );
-
-      modelA.reset();
-      modelB.reset();
-      modelC.reset();
+    // 1. Do not interrupt an active stream running on a different turn
+    if (streamingTurnId && streamingTurnId !== turnId) {
+      return;
     }
 
     setStreamingTurnId(turnId);
@@ -774,7 +734,11 @@ function ArenaContent() {
         };
       })
     );
-    setStreamingTurnId(null);
+
+    // Only clear streamingTurnId if all model slots are done streaming
+    if (!modelA.isStreaming && !modelB.isStreaming && !modelC.isStreaming) {
+      setStreamingTurnId(null);
+    }
   };
 
   const removeModel = (modelId: string) => {
@@ -1070,7 +1034,7 @@ function ArenaContent() {
         ...turn,
         responses: {
           modelA:
-            streamingSlot === "all" || streamingSlot === "modelA"
+            streamingSlot === "all" || streamingSlot === "modelA" || modelA.isStreaming
               ? {
                   text: modelA.text,
                   error: modelA.error,
@@ -1080,7 +1044,7 @@ function ArenaContent() {
                 }
               : turn.responses.modelA,
           modelB:
-            streamingSlot === "all" || streamingSlot === "modelB"
+            streamingSlot === "all" || streamingSlot === "modelB" || modelB.isStreaming
               ? {
                   text: modelB.text,
                   error: modelB.error,
@@ -1090,7 +1054,7 @@ function ArenaContent() {
                 }
               : turn.responses.modelB,
           modelC:
-            streamingSlot === "all" || streamingSlot === "modelC"
+            streamingSlot === "all" || streamingSlot === "modelC" || modelC.isStreaming
               ? {
                   text: modelC.text,
                   error: modelC.error,
