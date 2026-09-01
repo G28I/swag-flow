@@ -18,6 +18,7 @@ import {
   Trash2,
   LogIn,
   LogOut,
+  Search,
 } from "lucide-react";
 
 interface ThreadItem {
@@ -40,6 +41,11 @@ export default function AppShell({ children, breadcrumb = "Arena" }: AppShellPro
   const [isDarkMode, setIsDarkMode] = useState(true);
   const [threads, setThreads] = useState<ThreadItem[]>([]);
   const [isLoadingThreads, setIsLoadingThreads] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+
+  const filteredThreads = threads.filter((t) =>
+    t.title.toLowerCase().includes(searchQuery.toLowerCase())
+  );
 
   // Initialize theme from localStorage or document class
   useEffect(() => {
@@ -59,27 +65,76 @@ export default function AppShell({ children, breadcrumb = "Arena" }: AppShellPro
     });
   }, []);
 
-  // Fetch threads from API when user is authenticated
+  // Fetch threads from API when user is authenticated, or load from localStorage for anonymous users
   useEffect(() => {
-    if (!isLoaded || !user) return;
     let cancelled = false;
-    async function fetchThreads() {
-      setIsLoadingThreads(true);
-      try {
-        const res = await fetch("/api/arena/threads");
-        if (res.ok && !cancelled) {
-          const data: ThreadItem[] = await res.json();
-          setThreads(data);
+    async function loadThreads() {
+      if (user) {
+        setIsLoadingThreads(true);
+        try {
+          // Sync any local anonymous threads created prior to sign-in into the DB
+          const localAnon = localStorage.getItem("swag_flow_anon_threads");
+          if (localAnon) {
+            try {
+              const parsed: ThreadItem[] = JSON.parse(localAnon);
+              const threadIds = parsed.map((t) => t.id).filter(Boolean);
+              if (threadIds.length > 0) {
+                const anonToken = typeof window !== "undefined" ? localStorage.getItem("swag_flow_anon_token") || "" : "";
+                const res = await fetch("/api/arena/threads/sync", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ threadIds, anonToken }),
+                });
+                if (res.ok) {
+                  localStorage.removeItem("swag_flow_anon_threads");
+                }
+              } else {
+                localStorage.removeItem("swag_flow_anon_threads");
+              }
+            } catch (syncErr) {
+              console.warn("Notice: Local thread migration skipped:", syncErr);
+            }
+          }
+
+          const res = await fetch("/api/arena/threads");
+          if (res.ok && !cancelled) {
+            const data: ThreadItem[] = await res.json();
+            setThreads(data);
+          }
+        } catch (err) {
+          console.error("Failed to load threads:", err);
+        } finally {
+          if (!cancelled) setIsLoadingThreads(false);
         }
-      } catch (err) {
-        console.error("Failed to load threads:", err);
-      } finally {
-        if (!cancelled) setIsLoadingThreads(false);
+      } else {
+        try {
+          const local = localStorage.getItem("swag_flow_anon_threads");
+          if (local) setThreads(JSON.parse(local));
+          else setThreads([]);
+        } catch {
+          setThreads([]);
+        }
       }
     }
-    fetchThreads();
+
+    loadThreads();
+
+    const handleUpdate = () => {
+      if (!user) {
+        try {
+          const local = localStorage.getItem("swag_flow_anon_threads");
+          if (local) setThreads(JSON.parse(local));
+        } catch {}
+      }
+    };
+
+    window.addEventListener("swag_flow_threads_updated", handleUpdate);
+    window.addEventListener("storage", handleUpdate);
+
     return () => {
       cancelled = true;
+      window.removeEventListener("swag_flow_threads_updated", handleUpdate);
+      window.removeEventListener("storage", handleUpdate);
     };
   }, [isLoaded, user]);
 
@@ -96,38 +151,39 @@ export default function AppShell({ children, breadcrumb = "Arena" }: AppShellPro
     }
   };
 
-  const handleNewThread = async () => {
-    if (!user) {
-      router.push("/sign-in");
-      return;
-    }
-    try {
-      const res = await fetch("/api/arena/threads", { method: "POST" });
-      if (res.ok) {
-        const thread = await res.json();
-        setThreads((prev) => [thread, ...prev]);
-        router.push(`/?thread=${thread.id}`);
-      }
-    } catch (err) {
-      console.error("Failed to create thread:", err);
-    }
+  const handleNewThread = () => {
+    router.push("/");
   };
 
   const handleDeleteThread = async (e: React.MouseEvent, threadId: string) => {
     e.preventDefault();
     e.stopPropagation();
-    try {
-      const res = await fetch(`/api/arena/threads?id=${threadId}`, { method: "DELETE" });
-      if (res.ok) {
-        setThreads((prev) => prev.filter((t) => t.id !== threadId));
-        // If we're on the deleted thread, navigate home
-        const params = new URLSearchParams(window.location.search);
-        if (params.get("thread") === threadId) {
-          router.push("/");
-        }
+
+    setThreads((prev) => prev.filter((t) => t.id !== threadId));
+
+    if (user) {
+      try {
+        await fetch(`/api/arena/threads?id=${threadId}`, { method: "DELETE" });
+      } catch (err) {
+        console.error("Failed to delete thread:", err);
       }
-    } catch (err) {
-      console.error("Failed to delete thread:", err);
+    } else {
+      try {
+        const local = localStorage.getItem("swag_flow_anon_threads");
+        if (local) {
+          const parsed = JSON.parse(local);
+          const updated = parsed.filter((t: { id: string }) => t.id !== threadId);
+          localStorage.setItem("swag_flow_anon_threads", JSON.stringify(updated));
+        }
+      } catch {}
+    }
+
+    // If we're on the deleted thread, navigate home
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get("thread") === threadId) {
+        router.push("/");
+      }
     }
   };
 
@@ -147,11 +203,20 @@ export default function AppShell({ children, breadcrumb = "Arena" }: AppShellPro
       >
         {/* Title Logo */}
         <div className="flex items-center justify-between px-6 py-5 border-b border-border-custom bg-background/30">
-          <Link href="/" className="flex items-center gap-3">
+          <Link
+            href="/"
+            onClick={(e) => {
+              if (typeof window !== "undefined" && window.location.search.includes("thread")) {
+                e.preventDefault();
+                router.push("/");
+              }
+            }}
+            className="flex items-center gap-3"
+          >
             <div className="w-8 h-8 rounded-lg bg-accent flex items-center justify-center font-bold text-lg text-white shadow-md">
-              A
+              S
             </div>
-            <span className="font-semibold text-lg tracking-tight font-sans">LLM Arena</span>
+            <span className="font-semibold text-lg tracking-tight font-sans">Swag-flow</span>
           </Link>
           <button
             onClick={() => setSidebarOpen(false)}
@@ -170,6 +235,17 @@ export default function AppShell({ children, breadcrumb = "Arena" }: AppShellPro
               <Link
                 key={item.name}
                 href={item.path}
+                onClick={(e) => {
+                  if (item.path === "/") {
+                    if (
+                      typeof window !== "undefined" &&
+                      window.location.search.includes("thread")
+                    ) {
+                      e.preventDefault();
+                      router.push("/");
+                    }
+                  }
+                }}
                 className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold transition-all duration-200 ${
                   isActive
                     ? "bg-accent text-white shadow-md shadow-accent/20"
@@ -199,14 +275,31 @@ export default function AppShell({ children, breadcrumb = "Arena" }: AppShellPro
               <Plus size={16} />
             </button>
           </div>
+
+          {user && threads.length > 0 && (
+            <div className="relative mb-3 px-1">
+              <Search
+                size={13}
+                className="absolute left-3.5 top-2.5 text-muted-foreground/60 pointer-events-none"
+              />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Seek prompts & threads..."
+                className="w-full pl-8 pr-3 py-1.5 rounded-xl bg-background/60 border border-border-custom/60 text-xs font-medium focus:outline-none focus:border-accent/40 placeholder-muted-foreground/60 transition-colors"
+              />
+            </div>
+          )}
+
           <div className="flex-1 overflow-y-auto space-y-1 pr-1 scrollbar-thin">
             {!isLoaded ? (
               <div className="px-3 py-4 text-xs text-muted-foreground text-center">Loading…</div>
-            ) : !user ? (
+            ) : !user && threads.length === 0 ? (
               <div className="px-3 py-6 text-center flex flex-col items-center gap-3 bg-muted/20 border border-border-custom/40 rounded-xl my-2">
                 <MessageSquare size={22} className="text-muted-foreground/60" />
                 <p className="text-xs text-muted-foreground font-medium leading-relaxed">
-                  Sign in to create, save, and access thread history.
+                  No threads yet. Enter a prompt to start one, or sign in to sync history across devices.
                 </p>
                 <SignInButton mode="modal">
                   <button className="text-xs font-bold text-accent hover:underline cursor-pointer">
@@ -220,8 +313,12 @@ export default function AppShell({ children, breadcrumb = "Arena" }: AppShellPro
               <div className="px-3 py-4 text-xs text-muted-foreground text-center">
                 No threads yet. Click + to start one.
               </div>
+            ) : filteredThreads.length === 0 ? (
+              <div className="px-3 py-4 text-xs text-muted-foreground text-center italic">
+                No matching prompts found.
+              </div>
             ) : (
-              threads.map((thread) => (
+              filteredThreads.map((thread) => (
                 <Link
                   key={thread.id}
                   href={`/?thread=${thread.id}`}
@@ -308,7 +405,7 @@ export default function AppShell({ children, breadcrumb = "Arena" }: AppShellPro
               </button>
             )}
             <div className="flex items-center gap-2 text-sm text-muted-foreground font-semibold">
-              <span>Arena</span>
+              <span>Swag-flow</span>
               <span>/</span>
               <span className="text-foreground font-bold">{breadcrumb}</span>
             </div>
@@ -337,8 +434,8 @@ export default function AppShell({ children, breadcrumb = "Arena" }: AppShellPro
           </div>
         </header>
 
-        {/* Active Page Content Scroll Area */}
-        <div className="flex-1 overflow-y-auto">{children}</div>
+        {/* Active Page Content Area */}
+        <main className="flex-1 min-h-0 flex flex-col relative overflow-hidden">{children}</main>
       </div>
     </div>
   );

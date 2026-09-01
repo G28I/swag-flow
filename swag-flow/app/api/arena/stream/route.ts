@@ -1,9 +1,48 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
-import prisma from "@/app/lib/prisma";
 import { aj } from "@/app/lib/arcjet";
-import { logStatsigEvent } from "@/app/lib/statsig";
-import { env } from "@/app/lib/env";
+import prisma from "@/app/lib/prisma";
+import { executeWithRetryAndBackoff, RetryEngineError } from "@/app/lib/retryEngine";
+import { calculateCost, parseUsageTokens } from "@/app/lib/costEngine";
+import { normalizeAnonToken, isThreadOwner } from "@/app/lib/authHelper";
+
+export const maxDuration = 60; // 60s maximum execution time for Vercel / serverless
+
+const MODEL_FALLBACK_CHAIN: Record<string, string[]> = {
+  "google/gemini-2.0-flash-exp:free": [
+    "meta-llama/llama-3.3-70b-instruct:free",
+    "qwen/qwen-2.5-coder-32b-instruct:free",
+    "nvidia/nemotron-3.5-lightning:free",
+  ],
+  "meta-llama/llama-3.3-70b-instruct:free": [
+    "qwen/qwen-2.5-coder-32b-instruct:free",
+    "google/gemini-2.0-flash-exp:free",
+    "minimax/minimax-m3:free",
+  ],
+  "qwen/qwen-2.5-coder-32b-instruct:free": [
+    "meta-llama/llama-3.3-70b-instruct:free",
+    "google/gemini-2.0-flash-exp:free",
+  ],
+};
+
+function safeEnqueue(
+  controller: ReadableStreamDefaultController,
+  encoder: TextEncoder,
+  data: unknown
+): boolean {
+  try {
+    controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function safeClose(controller: ReadableStreamDefaultController): void {
+  try {
+    controller.close();
+  } catch {}
+}
 
 export async function POST(req: NextRequest) {
   try {
@@ -20,27 +59,17 @@ export async function POST(req: NextRequest) {
       userId = authObj.userId;
     }
 
-    // In local development, if no active session exists, fallback to mock user
     if (!userId && process.env.NODE_ENV === "development") {
       userId = "mock_user_123";
     }
 
-    if (!userId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const anonTokenHeader = req.headers.get("x-anon-token");
+    const normalizedAnon = normalizeAnonToken(anonTokenHeader);
+    const clientIp = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "127.0.0.1";
+    const arcjetUserId = userId || normalizedAnon || clientIp;
 
-    // 2. Clone request to read body for Arcjet validation (if required),
-    // then validate body parameters.
-    const body = await req.json();
-    const { threadId, parentId, model } = body;
-
-    if (!threadId || !parentId || !model) {
-      return NextResponse.json({ error: "Missing required parameters" }, { status: 400 });
-    }
-
-    // 3. Run Arcjet protection (rate limiting, bot detection, shield)
-    // We pass userId to track the token bucket limit per user across all models
-    const decision = await aj.protect(req, { userId, requested: 1 });
+    // 2. Run Arcjet protection FIRST (rate limiting, bot detection, shield) before consuming body stream
+    const decision = await aj.protect(req, { userId: arcjetUserId, requested: 1 });
     if (decision.isDenied()) {
       if (decision.reason.isRateLimit()) {
         return NextResponse.json(
@@ -54,34 +83,45 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Access denied." }, { status: 403 });
     }
 
-    // 4. Verify thread ownership and parentId validity
-    const thread = await prisma.thread.findFirst({
-      where: {
-        id: threadId,
-        userId,
-      },
-    });
+    // 3. Parse request body
+    const body = await req.json();
+    const { threadId, parentId, model, anonToken: bodyAnonToken, systemPrompt, temperature, topP, maxTokens } = body;
+    const anonToken = bodyAnonToken || anonTokenHeader;
 
-    if (!thread) {
-      return NextResponse.json({ error: "Thread not found or unauthorized" }, { status: 404 });
-    }
-
-    // Verify parent message belongs to this authorized thread
-    const parentMessage = await prisma.message.findFirst({
-      where: {
-        id: parentId,
-        threadId,
-      },
-    });
-
-    if (!parentMessage) {
+    if (!threadId || !parentId || !model) {
       return NextResponse.json(
-        { error: "Parent message not found in this thread" },
+        { error: "threadId, parentId, and model are required" },
         { status: 400 }
       );
     }
 
-    // 5. Create the assistant message placeholder in the database
+    // 4. Verify thread ownership
+    const thread = await prisma.thread.findUnique({
+      where: { id: threadId },
+    });
+
+    if (!thread) {
+      return NextResponse.json({ error: "Thread not found" }, { status: 404 });
+    }
+
+    if (!isThreadOwner(thread.userId, userId, anonToken)) {
+      return NextResponse.json({ error: "Unauthorized access to thread" }, { status: 403 });
+    }
+
+    // Verify parent user message exists in this thread
+    const parentMsg = await prisma.message.findFirst({
+      where: {
+        id: parentId,
+        threadId,
+        role: "user",
+      },
+    });
+
+    if (!parentMsg) {
+      return NextResponse.json({ error: "Parent user prompt message not found in this thread" }, { status: 404 });
+    }
+
+    // 5. Create assistant message placeholder in DB
     const assistantMessage = await prisma.message.create({
       data: {
         role: "assistant",
@@ -89,235 +129,350 @@ export async function POST(req: NextRequest) {
         model,
         threadId,
         parentId,
+        systemPrompt: systemPrompt || parentMsg.systemPrompt || null,
+        temperature: typeof temperature === "number" ? temperature : parentMsg.temperature || null,
+        topP: typeof topP === "number" ? topP : parentMsg.topP || null,
+        maxTokens: typeof maxTokens === "number" ? maxTokens : parentMsg.maxTokens || null,
       },
     });
 
-    // 6. Build conversation history up to the parent message
-    const pastMessages = await prisma.message.findMany({
+    // Build conversation context history for LLM
+    const historyMessages = await prisma.message.findMany({
       where: { threadId },
       orderBy: { createdAt: "asc" },
     });
 
-    const parentIndex = pastMessages.findIndex((m) => m.id === parentId);
-    const messagesToStream = (
-      parentIndex !== -1 ? pastMessages.slice(0, parentIndex + 1) : pastMessages
-    ).map((m) => ({
-      role: m.role as "user" | "assistant",
-      content: m.content,
-    }));
+    const openRouterMessages: Array<{ role: string; content: string }> = [];
 
-    // 6. Return standard Server-Sent Events (SSE) Response
+    // System prompt if configured
+    const effectiveSystemPrompt = systemPrompt || parentMsg.systemPrompt;
+    if (effectiveSystemPrompt) {
+      openRouterMessages.push({ role: "system", content: effectiveSystemPrompt });
+    }
+
+    // Append prior conversation turns up to current parent prompt
+    for (const msg of historyMessages) {
+      if (msg.role === "user") {
+        openRouterMessages.push({ role: "user", content: msg.content });
+      } else if (msg.role === "assistant" && msg.id !== assistantMessage.id && msg.content) {
+        openRouterMessages.push({ role: "assistant", content: msg.content });
+      }
+      if (msg.id === parentId) break;
+    }
+
+    const openRouterApiKey = process.env.OPENROUTER_API_KEY;
+
+    // 6. Return Streaming Server-Sent Events (SSE) Response
     const encoder = new TextEncoder();
-    const customStream = new ReadableStream({
+    const customReadable = new ReadableStream({
       async start(controller) {
+        const startTime = performance.now();
+        let completionText = "";
+        let isFirstToken = true;
+        let ttft: number | null = null;
+        let tokenCount = 0;
+        let promptTokensCount = 0;
+        let completionTokensCount = 0;
+        let reasoningTokensCount = 0;
+        let cachedTokensCount = 0;
+        let activeModel = model;
+        let lastFlushTime = performance.now();
+        let activeAbortController: AbortController | null = null;
+        let inactivityTimer: NodeJS.Timeout | null = null;
+
+        const resetInactivityTimeout = () => {
+          if (inactivityTimer) clearTimeout(inactivityTimer);
+          inactivityTimer = setTimeout(() => {
+            if (activeAbortController) {
+              activeAbortController.abort("Inactivity watchdog timeout after 25 seconds of silence");
+            }
+          }, 25000);
+        };
+
+        const clearInactivityTimeout = () => {
+          if (inactivityTimer) {
+            clearTimeout(inactivityTimer);
+            inactivityTimer = null;
+          }
+        };
+
         try {
-          // Send initial metadata containing the DB message ID
-          controller.enqueue(
-            encoder.encode(
-              `data: ${JSON.stringify({ type: "meta", messageId: assistantMessage.id })}\n\n`
-            )
-          );
+          const candidateModels = [model, ...(MODEL_FALLBACK_CHAIN[model] || [])];
+          let streamSuccess = false;
 
-          // Fetch OpenRouter API stream
-          const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-            method: "POST",
-            headers: {
-              Authorization: `Bearer ${env.OPENROUTER_API_KEY}`,
-              "Content-Type": "application/json",
-              "HTTP-Referer": "http://localhost:3000",
-              "X-Title": "LLM Arena",
-            },
-            body: JSON.stringify({
-              model,
-              messages: messagesToStream,
-              stream: true,
-              stream_options: { include_usage: true },
-            }),
-          });
+          for (let modelIdx = 0; modelIdx < candidateModels.length; modelIdx++) {
+            const currentCandidateModel = candidateModels[modelIdx];
+            activeModel = currentCandidateModel;
 
-          if (!response.ok) {
-            const errText = await response.text();
-            throw new Error(`OpenRouter returned status ${response.status}: ${errText}`);
-          }
-
-          const reader = response.body?.getReader();
-          if (!reader) {
-            throw new Error("No readable stream body returned from OpenRouter");
-          }
-
-          const decoder = new TextDecoder();
-          let buffer = "";
-          let isFirstToken = true;
-          const startTime = performance.now();
-          let ttft: number | null = null;
-          let tokenCount = 0;
-          let completionText = "";
-
-          try {
-            while (true) {
-              const { done, value } = await reader.read();
-              if (done) break;
-
-              buffer += decoder.decode(value, { stream: true });
-              const lines = buffer.split("\n");
-              buffer = lines.pop() || "";
-
-              for (const line of lines) {
-                const cleanedLine = line.trim();
-                if (!cleanedLine) continue;
-
-                if (cleanedLine.startsWith("data: ")) {
-                  const dataStr = cleanedLine.slice(6).trim();
-                  if (dataStr === "[DONE]") continue;
-
-                  try {
-                    const parsed = JSON.parse(dataStr);
-                    const content = parsed.choices?.[0]?.delta?.content;
-
-                    if (content) {
-                      if (isFirstToken) {
-                        ttft = (performance.now() - startTime) / 1000;
-                        isFirstToken = false;
-                      }
-                      completionText += content;
-                      // Fallback token counter in case usage statistics aren't received
-                      tokenCount += 1;
-
-                      controller.enqueue(
-                        encoder.encode(
-                          `data: ${JSON.stringify({ type: "token", text: content })}\n\n`
-                        )
-                      );
-                    }
-
-                    if (parsed.usage) {
-                      tokenCount = parsed.usage.completion_tokens;
-                    }
-                  } catch {
-                    // Ignore JSON parsing errors for incomplete lines
-                  }
-                }
-              }
+            if (modelIdx > 0) {
+              safeEnqueue(controller, encoder, {
+                type: "fallback_notice",
+                requestedModel: model,
+                fallbackModel: currentCandidateModel,
+              });
             }
 
-            // Handle any remaining text in buffer
-            if (buffer.trim().startsWith("data: ")) {
-              const cleanedLine = buffer.trim();
-              const dataStr = cleanedLine.slice(6).trim();
-              if (dataStr !== "[DONE]") {
-                try {
-                  const parsed = JSON.parse(dataStr);
-                  const content = parsed.choices?.[0]?.delta?.content;
-                  if (content) {
-                    completionText += content;
-                    tokenCount += 1;
-                    controller.enqueue(
-                      encoder.encode(
-                        `data: ${JSON.stringify({ type: "token", text: content })}\n\n`
-                      )
+            try {
+              await executeWithRetryAndBackoff(
+                async (_attempt) => {
+                  activeAbortController = new AbortController();
+                  resetInactivityTimeout();
+
+                  const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+                    method: "POST",
+                    headers: {
+                      Authorization: `Bearer ${openRouterApiKey}`,
+                      "HTTP-Referer": "https://github.com/G28I/swag-flow",
+                      "X-Title": "Swag-flow",
+                      "Content-Type": "application/json",
+                    },
+                    body: JSON.stringify({
+                      model: currentCandidateModel,
+                      messages: openRouterMessages,
+                      stream: true,
+                      temperature: typeof temperature === "number" ? temperature : 0.7,
+                      top_p: typeof topP === "number" ? topP : 1.0,
+                      max_tokens: typeof maxTokens === "number" ? maxTokens : 2048,
+                    }),
+                    signal: activeAbortController.signal,
+                  });
+
+                  if (!response.ok) {
+                    clearInactivityTimeout();
+                    const detail = await response.text().catch(() => "");
+                    throw new RetryEngineError(
+                      `OpenRouter (${response.status}): ${detail}`,
+                      response.status === 429 ? "RATE_LIMITED" : "NETWORK_ERROR",
+                      response.status
                     );
                   }
-                  if (parsed.usage) {
-                    tokenCount = parsed.usage.completion_tokens;
+
+                  if (!response.body) {
+                    clearInactivityTimeout();
+                    throw new Error("OpenRouter response body is null");
                   }
-                } catch {
-                  // Ignore
+
+                  const reader = response.body.getReader();
+                  const decoder = new TextDecoder();
+                  let buffer = "";
+
+                  while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+
+                    resetInactivityTimeout();
+                    buffer += decoder.decode(value, { stream: true });
+                    const lines = buffer.split("\n");
+                    buffer = lines.pop() || "";
+
+                    for (const line of lines) {
+                      const trimmed = line.trim();
+                      if (!trimmed || trimmed.startsWith(":")) continue;
+
+                      if (trimmed === "data: [DONE]") {
+                        break;
+                      }
+
+                      if (trimmed.startsWith("data: ")) {
+                        const jsonStr = trimmed.slice(6);
+                        let parsedObj: any = null;
+                        try {
+                          parsedObj = JSON.parse(jsonStr);
+                        } catch {
+                          // Ignore partial/incomplete JSON chunks
+                          continue;
+                        }
+
+                        if (parsedObj) {
+                          if (parsedObj.error) {
+                            const providerErrorMsg = typeof parsedObj.error === "string"
+                              ? parsedObj.error
+                              : parsedObj.error?.message || "Model provider stream error";
+                            throw new Error(providerErrorMsg);
+                          }
+
+                          if (parsedObj.usage) {
+                            const parsedUsage = parseUsageTokens(parsedObj.usage);
+                            promptTokensCount = parsedUsage.promptTokens;
+                            completionTokensCount = parsedUsage.completionTokens;
+                            reasoningTokensCount = parsedUsage.reasoningTokens;
+                            cachedTokensCount = parsedUsage.cachedTokens;
+                            if (parsedUsage.completionTokens > 0) {
+                              tokenCount = parsedUsage.completionTokens;
+                            }
+                          }
+
+                          const content = parsedObj.choices?.[0]?.delta?.content;
+                          if (content) {
+                            if (isFirstToken) {
+                              ttft = (performance.now() - startTime) / 1000;
+                              isFirstToken = false;
+                            }
+                            completionText += content;
+                            tokenCount += 1;
+
+                            const ok = safeEnqueue(controller, encoder, { type: "token", text: content });
+                            if (!ok) {
+                              // Client disconnected — abort upstream fetch and exit streaming loop immediately
+                              activeAbortController?.abort();
+                              return;
+                            }
+
+                            const now = performance.now();
+                            if (now - lastFlushTime > 3000 && completionText.length > 0) {
+                              lastFlushTime = now;
+                              prisma.message
+                                .update({
+                                  where: { id: assistantMessage.id },
+                                  data: { content: completionText },
+                                })
+                                .catch(() => {});
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+
+                  streamSuccess = true;
+                  return response;
+                },
+                {
+                  maxRetries: 2,
+                  baseDelayMs: 1000,
+                  maxDelayMs: 4000,
+                  cooldownKey: currentCandidateModel,
+                  streamStarted: !isFirstToken,
                 }
+              );
+
+              if (streamSuccess) break;
+            } catch (candidateErr: unknown) {
+              clearInactivityTimeout();
+
+              if (candidateErr instanceof RetryEngineError && candidateErr.kind === "ABORTED") {
+                throw candidateErr;
+              }
+
+              if (modelIdx === candidateModels.length - 1) {
+                throw candidateErr;
               }
             }
-
-            const totalTime = (performance.now() - startTime) / 1000;
-            const actualTtft = ttft ?? totalTime;
-            const tokensPerSec =
-              totalTime > actualTtft ? tokenCount / (totalTime - actualTtft) : tokenCount;
-
-            // Update database with final response content and performance metrics
-            await prisma.message.update({
-              where: { id: assistantMessage.id },
-              data: {
-                content: completionText,
-                latency: totalTime,
-                ttft: actualTtft,
-                tokensPerSec,
-                tokenCount,
-              },
-            });
-
-            // Log completion metrics in Statsig
-            await logStatsigEvent(userId, "model_response_completed", {
-              threadId,
-              model,
-              messageId: assistantMessage.id,
-              latency: totalTime,
-              ttft: actualTtft,
-              tokensPerSec,
-              tokenCount,
-              status: "success",
-            });
-
-            // Send completion metadata to the client
-            controller.enqueue(
-              encoder.encode(
-                `data: ${JSON.stringify({
-                  type: "done",
-                  latency: totalTime,
-                  ttft: actualTtft,
-                  tokensPerSec,
-                  tokenCount,
-                })}\n\n`
-              )
-            );
-            controller.close();
-          } catch (streamError: unknown) {
-            throw streamError;
           }
-        } catch (err: unknown) {
-          console.error("Error during streaming process:", err);
 
-          const errorMessage = err instanceof Error ? err.message : "Unknown error";
+          clearInactivityTimeout();
 
-          // Update database to record the failure
+          const totalElapsed = (performance.now() - startTime) / 1000;
+          const finalTtft = ttft ?? totalElapsed;
+          const tokensPerSec = totalElapsed > 0 ? tokenCount / totalElapsed : 0;
+          const costData = calculateCost(activeModel, promptTokensCount, completionTokensCount);
+
           await prisma.message.update({
             where: { id: assistantMessage.id },
             data: {
-              content: "Error: Failed to retrieve a complete answer from the AI model.",
-              latency: 0,
-              ttft: 0,
-              tokenCount: 0,
+              content: completionText,
+              model: activeModel,
+              actualModel: activeModel,
+              latency: totalElapsed,
+              ttft: finalTtft,
+              tokensPerSec,
+              tokenCount,
+              promptTokens: promptTokensCount,
+              completionTokens: completionTokensCount,
+              reasoningTokens: reasoningTokensCount,
+              cachedTokens: cachedTokensCount,
+              cost: costData.costUsd,
+              costUsd: costData.costUsd,
+              costSource: costData.costSource,
             },
           });
 
-          // Log failure event in Statsig
-          await logStatsigEvent(userId, "model_response_failed", {
-            threadId,
-            model,
+          safeEnqueue(controller, encoder, {
+            type: "done",
             messageId: assistantMessage.id,
-            error: errorMessage,
+            finalText: completionText,
+            actualModel: activeModel,
+            metrics: {
+              ttft: finalTtft,
+              latency: totalElapsed,
+              tokensPerSec,
+              tokenCount,
+              costUsd: costData.costUsd,
+              costSource: costData.costSource,
+            },
           });
 
-          // Inform client of the error
-          controller.enqueue(
-            encoder.encode(
-              `data: ${JSON.stringify({
-                type: "error",
-                message: "An error occurred while calling the model. Please try again.",
-              })}\n\n`
-            )
-          );
-          controller.close();
+          safeClose(controller);
+        } catch (err: unknown) {
+          clearInactivityTimeout();
+          console.error("Error during streaming process:", err);
+
+          const rawErrorString = err instanceof Error ? err.message : String(err);
+          const lowerErr = rawErrorString.toLowerCase();
+
+          const isTimeout =
+            err instanceof Error &&
+            (err.name === "TimeoutError" ||
+              err.name === "AbortError" ||
+              lowerErr.includes("timeout") ||
+              lowerErr.includes("timed out"));
+
+          const isRateLimit = lowerErr.includes("429") || lowerErr.includes("rate limit");
+          const isCapacityOrServiceErr =
+            lowerErr.includes("503") ||
+            lowerErr.includes("500") ||
+            lowerErr.includes("502") ||
+            lowerErr.includes("504") ||
+            lowerErr.includes("overloaded") ||
+            lowerErr.includes("capacity") ||
+            lowerErr.includes("unavailable");
+
+          const errorMessage = isTimeout
+            ? "Model connection timed out due to inactivity. Click 🔄 to retry."
+            : isRateLimit
+              ? "The model provider is temporarily rate limited. Please wait a moment and click 🔄 to retry."
+              : isCapacityOrServiceErr
+                ? "The AI model service is temporarily overloaded or unavailable. Click 🔄 to retry."
+                : "Unable to complete response from model provider. Click 🔄 to retry.";
+
+          const elapsed = (performance.now() - startTime) / 1000;
+          const actualTtft = ttft ?? elapsed;
+
+          await prisma.message
+            .update({
+              where: { id: assistantMessage.id },
+              data: {
+                content: completionText || errorMessage,
+                latency: elapsed,
+                ttft: actualTtft,
+                tokensPerSec: elapsed > 0 ? tokenCount / elapsed : 0,
+                tokenCount,
+              },
+            })
+            .catch(() => {});
+
+          safeEnqueue(controller, encoder, {
+            type: "error",
+            messageId: assistantMessage.id,
+            error: errorMessage,
+            partialText: completionText,
+          });
+
+          safeClose(controller);
         }
       },
     });
 
-    return new Response(customStream, {
+    return new NextResponse(customReadable, {
       headers: {
-        "Content-Type": "text/event-stream",
+        "Content-Type": "text/event-stream; charset=utf-8",
         "Cache-Control": "no-cache, no-transform",
         Connection: "keep-alive",
+        "X-Accel-Buffering": "no",
       },
     });
   } catch (error: unknown) {
-    console.error("Error in stream route handler:", error);
-    return NextResponse.json({ error: "An unexpected server error occurred." }, { status: 500 });
+    console.error("Error initializing stream route:", error);
+    return NextResponse.json({ error: "An unexpected error occurred." }, { status: 500 });
   }
 }

@@ -1,0 +1,7 @@
+{
+  "mcpServers": {
+    "arcjet": {
+      "serverUrl": "https://api.arcjet.com/mcp"
+    }
+  }
+}
