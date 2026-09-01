@@ -244,7 +244,7 @@ export function useModelStream() {
                   setIsStreaming(false);
                 } else if (event.type === "error") {
                   if (watchdogRef.id) clearTimeout(watchdogRef.id);
-                  snapshotError = event.message || "Model provider error";
+                  snapshotError = event.error || event.message || "Model provider error";
                   setError(snapshotError);
                   setIsStreaming(false);
                 }
