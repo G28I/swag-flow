@@ -653,6 +653,12 @@ function ArenaContent() {
     const modelItem = turn.models[modelIndex];
     if (!modelItem) return;
 
+    // 1. Do not interrupt an active stream running on a different turn
+    if (streamingTurnId && streamingTurnId !== turnId) {
+      setError("Cannot regenerate while another turn is actively streaming. Please wait or stop the active stream.");
+      return;
+    }
+
     trackClientEvent("regenerate_clicked", { turnId, slot, modelId: modelItem.id });
 
     let targetThreadId = threadId;
@@ -679,11 +685,6 @@ function ArenaContent() {
         setError("Failed to start regeneration. Please try again.");
         return;
       }
-    }
-
-    // 1. Do not interrupt an active stream running on a different turn
-    if (streamingTurnId && streamingTurnId !== turnId) {
-      return;
     }
 
     setStreamingTurnId(turnId);
