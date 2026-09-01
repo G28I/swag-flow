@@ -614,7 +614,7 @@ function ArenaContent() {
       }
 
       const data = await response.json();
-      const parentId = data.messageId;
+      const parentId = data.promptId || data.messageId;
       const currentThreadId = data.threadId;
       setThreadId(currentThreadId);
 
@@ -675,7 +675,7 @@ function ArenaContent() {
         if (!res.ok) throw new Error("Failed to prepare prompt for regeneration.");
         const data = await res.json();
         targetThreadId = data.threadId;
-        targetPromptId = data.messageId;
+        targetPromptId = data.promptId || data.messageId;
         setThreadId(targetThreadId);
         setTurns((prev) =>
           prev.map((t) => (t.id === turnId ? { ...t, promptId: targetPromptId } : t))
@@ -929,7 +929,7 @@ function ArenaContent() {
 
       const data = await response.json();
       const currentThreadId = data.threadId;
-      const parentId = data.messageId;
+      const parentId = data.promptId || data.messageId;
 
       setThreadId(currentThreadId);
       if (typeof window !== "undefined") {

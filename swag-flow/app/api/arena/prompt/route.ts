@@ -127,6 +127,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       threadId: targetThreadId,
       promptId: userMessage.id,
+      messageId: userMessage.id,
     });
   } catch (error: unknown) {
     console.error("Error creating prompt:", error);
