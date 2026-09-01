@@ -275,13 +275,19 @@ export async function POST(req: NextRequest) {
 
                       if (trimmed.startsWith("data: ")) {
                         const jsonStr = trimmed.slice(6);
+                        let parsedObj: any = null;
                         try {
-                          const parsedObj = JSON.parse(jsonStr);
+                          parsedObj = JSON.parse(jsonStr);
+                        } catch {
+                          // Ignore partial/incomplete JSON chunks
+                          continue;
+                        }
 
+                        if (parsedObj) {
                           if (parsedObj.error) {
                             const providerErrorMsg = typeof parsedObj.error === "string"
                               ? parsedObj.error
-                              : parsedObj.error.message || "Model provider stream error";
+                              : parsedObj.error?.message || "Model provider stream error";
                             throw new Error(providerErrorMsg);
                           }
 
@@ -323,8 +329,6 @@ export async function POST(req: NextRequest) {
                                 .catch(() => {});
                             }
                           }
-                        } catch {
-                          // Ignore partial JSON chunks
                         }
                       }
                     }

@@ -19,12 +19,12 @@ const sharedRules = [
     // Allow search engines but block general scrapers/automated tools
     allow: ["CATEGORY:SEARCH_ENGINE"],
   }),
-  // Rate limit configuration
+  // Rate limit configuration for multi-model stream evaluations (1 prompt = 3 model streams)
   tokenBucket({
     mode: "LIVE",
-    refillRate: 10, // refill 10 tokens per minute
-    interval: "1m", // interval of 1 minute
-    capacity: 15, // allow up to 15 tokens
+    refillRate: 30, // refill 30 tokens per minute (allows 10 multi-model evaluations/min)
+    interval: "1m",
+    capacity: 30, // allow burst of up to 30 tokens (10 3-model evaluations)
   }),
 ];
 
