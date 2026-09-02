@@ -117,3 +117,54 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "An unexpected error occurred." }, { status: 500 });
   }
 }
+
+// DELETE: Delete a thread owned by the authenticated user or anonymous token
+export async function DELETE(req: NextRequest) {
+  try {
+    const isClerkConfigured =
+      process.env.CLERK_SECRET_KEY &&
+      process.env.CLERK_SECRET_KEY !== "sk_test_placeholder" &&
+      process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY &&
+      process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY !== "pk_test_placeholder";
+
+    let userId: string | null = null;
+    if (isClerkConfigured) {
+      const authObj = await auth();
+      userId = authObj.userId;
+    }
+
+    const { searchParams } = new URL(req.url);
+    const threadId = searchParams.get("id");
+    const anonToken = req.headers.get("x-anon-token");
+
+    if (!threadId) {
+      return NextResponse.json({ error: "Thread ID is required" }, { status: 400 });
+    }
+
+    const thread = await prisma.thread.findUnique({
+      where: { id: threadId },
+      select: { id: true, userId: true },
+    });
+
+    if (!thread) {
+      return NextResponse.json({ error: "Thread not found" }, { status: 404 });
+    }
+
+    if (!isThreadOwner(thread.userId, userId, anonToken)) {
+      return NextResponse.json({ error: "Unauthorized to delete thread" }, { status: 403 });
+    }
+
+    await prisma.thread.delete({
+      where: { id: threadId },
+    });
+
+    return NextResponse.json({ success: true, deletedId: threadId });
+  } catch (error: unknown) {
+    const errMessage = error instanceof Error ? error.message : String(error);
+    console.error("Error deleting thread:", errMessage, error);
+    return NextResponse.json(
+      { error: `Thread deletion failed: ${errMessage}` },
+      { status: 500 }
+    );
+  }
+}

@@ -20,6 +20,7 @@ import {
   LogOut,
   Search,
 } from "lucide-react";
+import { getAnonToken } from "@/app/lib/anonToken";
 
 interface ThreadItem {
   id: string;
@@ -159,26 +160,33 @@ export default function AppShell({ children, breadcrumb = "Arena" }: AppShellPro
     e.preventDefault();
     e.stopPropagation();
 
+    // 1. Immediately remove thread from UI state
     setThreads((prev) => prev.filter((t) => t.id !== threadId));
 
-    if (user) {
-      try {
-        await fetch(`/api/arena/threads?id=${threadId}`, { method: "DELETE" });
-      } catch (err) {
-        console.error("Failed to delete thread:", err);
+    // 2. Remove thread from local storage cache
+    try {
+      const local = localStorage.getItem("swag_flow_anon_threads");
+      if (local) {
+        const parsed = JSON.parse(local);
+        const updated = parsed.filter((t: { id: string }) => t.id !== threadId);
+        localStorage.setItem("swag_flow_anon_threads", JSON.stringify(updated));
       }
-    } else {
-      try {
-        const local = localStorage.getItem("swag_flow_anon_threads");
-        if (local) {
-          const parsed = JSON.parse(local);
-          const updated = parsed.filter((t: { id: string }) => t.id !== threadId);
-          localStorage.setItem("swag_flow_anon_threads", JSON.stringify(updated));
-        }
-      } catch {}
+    } catch {}
+
+    // 3. Always send DELETE to backend API to remove thread from PostgreSQL database
+    try {
+      const anonToken = getAnonToken();
+      await fetch(`/api/arena/threads?id=${threadId}`, {
+        method: "DELETE",
+        headers: {
+          "x-anon-token": anonToken,
+        },
+      });
+    } catch (err) {
+      console.error("Failed to delete thread from backend database:", err);
     }
 
-    // If we're on the deleted thread, navigate home
+    // 4. If viewing the deleted thread, navigate home
     if (typeof window !== "undefined") {
       const params = new URLSearchParams(window.location.search);
       if (params.get("thread") === threadId) {
