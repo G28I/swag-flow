@@ -19,8 +19,10 @@ import {
   LogIn,
   LogOut,
   Search,
+  Bug,
 } from "lucide-react";
 import { getAnonToken } from "@/app/lib/anonToken";
+import { BugReportModal } from "@/components/BugReportModal";
 
 interface ThreadItem {
   id: string;
@@ -40,6 +42,7 @@ export default function AppShell({ children, breadcrumb = "Arena" }: AppShellPro
   const { user, isLoaded } = useUser();
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [isDarkMode, setIsDarkMode] = useState(true);
+  const [isBugModalOpen, setIsBugModalOpen] = useState(false);
   const [threads, setThreads] = useState<ThreadItem[]>([]);
   const [isLoadingThreads, setIsLoadingThreads] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -389,6 +392,14 @@ export default function AppShell({ children, breadcrumb = "Arena" }: AppShellPro
               </SignOutButton>
             )}
             <button
+              onClick={() => setIsBugModalOpen(true)}
+              className="p-2 rounded-xl border border-border-custom hover:bg-accent/15 text-muted-foreground hover:text-accent transition-colors cursor-pointer"
+              title="Report a Bug"
+              aria-label="Report a Bug"
+            >
+              <Bug size={18} />
+            </button>
+            <button
               onClick={toggleTheme}
               className="p-2 rounded-xl border border-border-custom hover:bg-muted/50 text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
               title="Toggle theme"
@@ -398,6 +409,8 @@ export default function AppShell({ children, breadcrumb = "Arena" }: AppShellPro
           </div>
         </div>
       </aside>
+
+      <BugReportModal isOpen={isBugModalOpen} onClose={() => setIsBugModalOpen(false)} />
 
       {/* Main View Area */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden relative">

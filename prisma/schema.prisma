@@ -89,3 +89,16 @@ model Vote {
   @@index([promptId])
   @@index([votedModel])
 }
+
+model BugReport {
+  id          String   @id @default(uuid())
+  userId      String   // Clerk user ID or anonymous token
+  category    String   // "ui" | "stream" | "model" | "other"
+  description String   @db.Text
+  imageData   String?  @db.Text // Base64 Data URL for attached screenshot
+  pageUrl     String?  // Current page route
+  createdAt   DateTime @default(now())
+
+  @@index([userId])
+  @@index([category])
+}
