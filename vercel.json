@@ -1,4 +1,5 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "framework": "nextjs"
+  "buildCommand": "cd swag-flow && pnpm run build",
+  "installCommand": "cd swag-flow && pnpm install --no-frozen-lockfile"
 }
