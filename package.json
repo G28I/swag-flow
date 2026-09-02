@@ -1,0 +1,13 @@
+{
+  "name": "swag-flow-monorepo",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "cd swag-flow && pnpm dev",
+    "build": "cd swag-flow && pnpm run build",
+    "postinstall": "cd swag-flow && pnpm install"
+  },
+  "dependencies": {
+    "next": "16.3.1"
+  }
+}
