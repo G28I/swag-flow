@@ -1,0 +1,9 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "builds": [
+    {
+      "src": "swag-flow/package.json",
+      "use": "@vercel/next"
+    }
+  ]
+}
