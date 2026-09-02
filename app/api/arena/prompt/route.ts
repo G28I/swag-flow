@@ -130,7 +130,11 @@ export async function POST(req: NextRequest) {
       messageId: userMessage.id,
     });
   } catch (error: unknown) {
-    console.error("Error creating prompt:", error);
-    return NextResponse.json({ error: "An unexpected error occurred." }, { status: 500 });
+    const errMessage = error instanceof Error ? error.message : String(error);
+    console.error("Error creating prompt:", errMessage, error);
+    return NextResponse.json(
+      { error: `Prompt submission error: ${errMessage || "Database or backend service failed."}` },
+      { status: 500 }
+    );
   }
 }
