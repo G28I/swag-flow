@@ -472,7 +472,11 @@ export async function POST(req: NextRequest) {
       },
     });
   } catch (error: unknown) {
-    console.error("Error initializing stream route:", error);
-    return NextResponse.json({ error: "An unexpected error occurred." }, { status: 500 });
+    const errMessage = error instanceof Error ? error.message : String(error);
+    console.error("Error initializing stream route:", errMessage, error);
+    return NextResponse.json(
+      { error: `Model stream initialization failed: ${errMessage || "Database or OpenRouter configuration issue."}` },
+      { status: 500 }
+    );
   }
 }
