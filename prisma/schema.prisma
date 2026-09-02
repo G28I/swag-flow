@@ -17,7 +17,7 @@ model Thread {
   parentThread   Thread?   @relation("ThreadForks", fields: [parentThreadId], references: [id], onDelete: SetNull)
   forks          Thread[]  @relation("ThreadForks")
   createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  updatedAt      DateTime  @default(now()) @updatedAt
 
   messages       Message[]
   votes          Vote[]
@@ -62,7 +62,7 @@ model Message {
   costSource       String?   // "official" | "openrouter_default" | "fallback"
 
   createdAt        DateTime  @default(now())
-  updatedAt        DateTime  @updatedAt
+  updatedAt        DateTime  @default(now()) @updatedAt
 
   promptVotes      Vote[]    @relation("PromptVotes")
 
