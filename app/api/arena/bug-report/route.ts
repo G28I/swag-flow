@@ -7,9 +7,9 @@ export async function POST(req: NextRequest) {
   try {
     const isClerkConfigured = Boolean(
       process.env.CLERK_SECRET_KEY &&
-        process.env.CLERK_SECRET_KEY !== "sk_test_placeholder" &&
-        process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY &&
-        process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY !== "pk_test_placeholder"
+      process.env.CLERK_SECRET_KEY !== "sk_test_placeholder" &&
+      process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY &&
+      process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY !== "pk_test_placeholder"
     );
 
     let userId: string | null = null;

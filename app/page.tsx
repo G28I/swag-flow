@@ -14,6 +14,7 @@ import HyperparameterDrawer, {
   Hyperparameters,
 } from "@/components/HyperparameterDrawer";
 import { getAnonToken } from "@/app/lib/anonToken";
+import { hasAnalyticsConsent } from "@/app/lib/cookieConsent";
 import { getTurnComparisonInsights } from "@/app/lib/costEngine";
 import { SignInButton } from "@clerk/nextjs";
 import {
@@ -438,6 +439,9 @@ function ArenaContent() {
     eventName: string,
     metadata?: Record<string, string | number | boolean | null | undefined>
   ) => {
+    if (!hasAnalyticsConsent()) {
+      return;
+    }
     fetch("/api/arena/telemetry", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -942,9 +946,9 @@ function ArenaContent() {
       setTurns((prev) => prev.map((t) => (t.id === turnId ? { ...t, promptId: parentId } : t)));
 
       // 2. Fire OpenRouter streaming connections concurrently for active slots
-      activeModels.forEach((model, idx) => {
+      const streamPromises = activeModels.map((model, idx) => {
         const hook = idx === 0 ? modelA : idx === 1 ? modelB : modelC;
-        hook
+        return hook
           .startStream(currentThreadId, parentId, model.id, {
             systemPrompt: hyperparameters.systemPrompt,
             temperature: hyperparameters.temperature,
@@ -954,6 +958,10 @@ function ArenaContent() {
           .catch((err) => {
             console.error(`Stream start error for model ${model.id}:`, err);
           });
+      });
+
+      Promise.allSettled(streamPromises).then(() => {
+        setStreamingTurnId(null);
       });
 
       // Defer non-critical local storage history sync to background microtask
@@ -1015,17 +1023,11 @@ function ArenaContent() {
 
   const isStreamingAny = modelA.isStreaming || modelB.isStreaming || modelC.isStreaming;
 
-  // Clear stale streamingTurnId when all streams are complete
-  useEffect(() => {
-    if (!isStreamingAny && streamingTurnId) {
-      setStreamingTurnId(null);
-    }
-  }, [isStreamingAny, streamingTurnId]);
-
   const handleStopAll = () => {
     modelA.abort();
     modelB.abort();
     modelC.abort();
+    setStreamingTurnId(null);
   };
 
   // Sync current active streaming hooks into target turn card in the feed

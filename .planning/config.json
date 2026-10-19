@@ -1,0 +1,9 @@
+{
+  "version": "1.0",
+  "project": "Swag-flow",
+  "workflow": {
+    "auto_verify": true,
+    "tracer_first": true,
+    "strict_types": true
+  }
+}

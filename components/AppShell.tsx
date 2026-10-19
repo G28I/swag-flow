@@ -22,6 +22,7 @@ import {
   Bug,
 } from "lucide-react";
 import { getAnonToken } from "@/app/lib/anonToken";
+import { openCookiePreferencesModal } from "@/app/lib/cookieConsent";
 import { BugReportModal } from "@/components/BugReportModal";
 
 interface ThreadItem {
@@ -352,6 +353,25 @@ export default function AppShell({ children, breadcrumb = "Arena" }: AppShellPro
               ))
             )}
           </div>
+        </div>
+
+        {/* Legal & Policy Links */}
+        <div className="px-4 py-2 border-t border-border-custom/50 flex items-center justify-between text-[11px] text-muted-foreground/75">
+          <Link href="/privacy" className="hover:text-foreground transition-colors">
+            Privacy
+          </Link>
+          <span>·</span>
+          <Link href="/terms" className="hover:text-foreground transition-colors">
+            Terms
+          </Link>
+          <span>·</span>
+          <button
+            type="button"
+            onClick={openCookiePreferencesModal}
+            className="hover:text-foreground transition-colors cursor-pointer"
+          >
+            Cookies
+          </button>
         </div>
 
         {/* Bottom User Area */}
