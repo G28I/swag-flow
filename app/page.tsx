@@ -14,7 +14,12 @@ import HyperparameterDrawer, {
   Hyperparameters,
 } from "@/components/HyperparameterDrawer";
 import { getAnonToken } from "@/app/lib/anonToken";
-import { hasAnalyticsConsent } from "@/app/lib/cookieConsent";
+import {
+  hasAnalyticsConsent,
+  hasFunctionalConsent,
+  purgeOptionalStorage,
+  type ConsentPreferences,
+} from "@/app/lib/cookieConsent";
 import { getTurnComparisonInsights } from "@/app/lib/costEngine";
 import { SignInButton } from "@clerk/nextjs";
 import {
@@ -181,7 +186,7 @@ function ArenaContent() {
 
   // Synchronize turns with localStorage to guard against page refresh data loss (token-bound)
   useEffect(() => {
-    if (turns.length > 0 && isOwner) {
+    if (turns.length > 0 && isOwner && hasFunctionalConsent()) {
       try {
         const anonToken = getAnonToken();
         const payload = {
@@ -194,6 +199,18 @@ function ArenaContent() {
       }
     }
   }, [turns, threadId, isOwner]);
+
+  // Purge optional storage immediately when functional consent is withdrawn
+  useEffect(() => {
+    const handleConsentUpdated = (e: Event) => {
+      const customEvent = e as CustomEvent<ConsentPreferences>;
+      if (customEvent.detail && !customEvent.detail.functional) {
+        purgeOptionalStorage();
+      }
+    };
+    window.addEventListener("swag_flow_consent_updated", handleConsentUpdated);
+    return () => window.removeEventListener("swag_flow_consent_updated", handleConsentUpdated);
+  }, []);
 
   // Read thread from query parameters and load thread history
   useEffect(() => {
@@ -379,15 +396,16 @@ function ArenaContent() {
             }
           );
 
-          setTurns(hydratedTurns);
-          try {
-            const currentToken = getAnonToken();
-            const payload = {
-              anonToken: currentToken,
-              turns: hydratedTurns,
-            };
-            localStorage.setItem(targetKey, JSON.stringify(payload));
-          } catch {}
+          if (hasFunctionalConsent()) {
+            try {
+              const currentToken = getAnonToken();
+              const payload = {
+                anonToken: currentToken,
+                turns: hydratedTurns,
+              };
+              localStorage.setItem(targetKey, JSON.stringify(payload));
+            } catch {}
+          }
         }
       } catch (err) {
         console.error("Failed to load thread history:", err);
@@ -966,7 +984,7 @@ function ArenaContent() {
 
       // Defer non-critical local storage history sync to background microtask
       setTimeout(() => {
-        if (typeof window !== "undefined") {
+        if (typeof window !== "undefined" && hasFunctionalConsent()) {
           try {
             const existing = JSON.parse(localStorage.getItem("swag_flow_anon_threads") || "[]");
             const title = userPrompt.length > 35 ? userPrompt.substring(0, 35) + "..." : userPrompt;

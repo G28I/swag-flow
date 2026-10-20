@@ -230,13 +230,15 @@ export function CookieConsentBanner() {
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <Settings2 size={16} className="text-[#d4c3b3]" aria-hidden="true" />
-                    <span className="text-sm font-bold text-[#f5efe6]">
+                    <span id="functional-storage-label" className="text-sm font-bold text-[#f5efe6]">
                       Functional Storage (Local Drafts)
                     </span>
                   </div>
-                  <label className="relative inline-flex items-center cursor-pointer">
+                  <label htmlFor="toggle-functional-storage" className="relative inline-flex items-center cursor-pointer">
                     <input
+                      id="toggle-functional-storage"
                       type="checkbox"
+                      aria-label="Toggle Functional Storage (Local Drafts)"
                       checked={functionalChecked}
                       onChange={(e) => setFunctionalChecked(e.target.checked)}
                       className="sr-only peer"
@@ -255,13 +257,15 @@ export function CookieConsentBanner() {
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <Cookie size={16} className="text-[#d4c3b3]" aria-hidden="true" />
-                    <span className="text-sm font-bold text-[#f5efe6]">
+                    <span id="analytics-telemetry-label" className="text-sm font-bold text-[#f5efe6]">
                       Analytics & Performance Telemetry
                     </span>
                   </div>
-                  <label className="relative inline-flex items-center cursor-pointer">
+                  <label htmlFor="toggle-analytics-telemetry" className="relative inline-flex items-center cursor-pointer">
                     <input
+                      id="toggle-analytics-telemetry"
                       type="checkbox"
+                      aria-label="Toggle Analytics & Performance Telemetry"
                       checked={analyticsChecked}
                       onChange={(e) => setAnalyticsChecked(e.target.checked)}
                       className="sr-only peer"

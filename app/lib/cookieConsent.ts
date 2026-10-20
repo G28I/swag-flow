@@ -16,10 +16,33 @@ export const OPEN_COOKIE_MODAL_EVENT = "swag_flow_open_cookie_modal";
 
 export const DEFAULT_PREFERENCES: ConsentPreferences = {
   necessary: true,
-  functional: true,
+  functional: false,
   analytics: false,
   timestamp: new Date().toISOString(),
 };
+
+/**
+ * Purges optional cached data (drafts, turn cache, anonymous thread lists)
+ * while strictly preserving necessary tokens (swag_flow_anon_token, swag_flow_cookie_consent).
+ */
+export function purgeOptionalStorage(): void {
+  if (typeof window === "undefined") return;
+
+  try {
+    const keysToRemove: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && (key.startsWith("arena_cache_") || key === "swag_flow_anon_threads")) {
+        keysToRemove.push(key);
+      }
+    }
+    for (const key of keysToRemove) {
+      localStorage.removeItem(key);
+    }
+  } catch (err) {
+    console.error("Failed to purge optional storage:", err);
+  }
+}
 
 /**
  * Retrieve saved consent preferences from localStorage or cookie.
@@ -49,6 +72,7 @@ export function getConsentPreferences(): ConsentPreferences | null {
 
 /**
  * Save user consent preferences to localStorage and sync cookie.
+ * Automatically purges optional cached storage if functional consent is denied or withdrawn.
  */
 export function setConsentPreferences(
   prefs: Omit<ConsentPreferences, "necessary" | "timestamp"> & { necessary?: boolean }
@@ -64,6 +88,12 @@ export function setConsentPreferences(
 
   try {
     localStorage.setItem(CONSENT_STORAGE_KEY, JSON.stringify(resolved));
+
+    // If functional consent was denied or withdrawn, immediately purge optional data
+    if (!resolved.functional) {
+      purgeOptionalStorage();
+    }
+
     // Also write a 1-year first-party cookie for SSR and security headers compatibility
     document.cookie = `${CONSENT_STORAGE_KEY}=${encodeURIComponent(
       JSON.stringify(resolved)
@@ -85,11 +115,11 @@ export function hasAnalyticsConsent(): boolean {
 
 /**
  * Quick check: has the user consented to functional storage caching?
+ * Defaults to false (denied) until explicit consent is recorded.
  */
 export function hasFunctionalConsent(): boolean {
   const prefs = getConsentPreferences();
-  // Default to true only if explicit consent was given or not yet rejected
-  return prefs ? prefs.functional : true;
+  return Boolean(prefs?.functional);
 }
 
 /**

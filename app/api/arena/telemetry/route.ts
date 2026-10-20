@@ -23,6 +23,27 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Rate limit exceeded." }, { status: 429 });
     }
 
+    // 2. Validate analytics cookie consent on the server
+    const consentCookie = req.cookies.get("swag_flow_cookie_consent")?.value;
+    let hasAnalyticsConsent = false;
+    if (consentCookie) {
+      try {
+        const parsed = JSON.parse(decodeURIComponent(consentCookie));
+        if (parsed.analytics === true) {
+          hasAnalyticsConsent = true;
+        }
+      } catch {
+        hasAnalyticsConsent = false;
+      }
+    }
+
+    if (!hasAnalyticsConsent) {
+      return NextResponse.json(
+        { error: "Analytics consent required." },
+        { status: 403 }
+      );
+    }
+
     const isClerkConfigured =
       process.env.CLERK_SECRET_KEY &&
       process.env.CLERK_SECRET_KEY !== "sk_test_placeholder" &&

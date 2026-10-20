@@ -22,7 +22,7 @@ import {
   Bug,
 } from "lucide-react";
 import { getAnonToken } from "@/app/lib/anonToken";
-import { openCookiePreferencesModal } from "@/app/lib/cookieConsent";
+import { openCookiePreferencesModal, hasFunctionalConsent } from "@/app/lib/cookieConsent";
 import { BugReportModal } from "@/components/BugReportModal";
 
 interface ThreadItem {
@@ -112,12 +112,16 @@ export default function AppShell({ children, breadcrumb = "Arena" }: AppShellPro
           if (!cancelled) setIsLoadingThreads(false);
         }
       } else {
-        try {
-          const local = localStorage.getItem("swag_flow_anon_threads");
-          if (local) setThreads(JSON.parse(local));
-          else setThreads([]);
-        } catch {
+        if (!hasFunctionalConsent()) {
           setThreads([]);
+        } else {
+          try {
+            const local = localStorage.getItem("swag_flow_anon_threads");
+            if (local) setThreads(JSON.parse(local));
+            else setThreads([]);
+          } catch {
+            setThreads([]);
+          }
         }
       }
     }
@@ -126,19 +130,28 @@ export default function AppShell({ children, breadcrumb = "Arena" }: AppShellPro
 
     const handleUpdate = () => {
       if (!user) {
+        if (!hasFunctionalConsent()) {
+          setThreads([]);
+          return;
+        }
         try {
           const local = localStorage.getItem("swag_flow_anon_threads");
           if (local) setThreads(JSON.parse(local));
-        } catch {}
+          else setThreads([]);
+        } catch {
+          setThreads([]);
+        }
       }
     };
 
     window.addEventListener("swag_flow_threads_updated", handleUpdate);
+    window.addEventListener("swag_flow_consent_updated", handleUpdate);
     window.addEventListener("storage", handleUpdate);
 
     return () => {
       cancelled = true;
       window.removeEventListener("swag_flow_threads_updated", handleUpdate);
+      window.removeEventListener("swag_flow_consent_updated", handleUpdate);
       window.removeEventListener("storage", handleUpdate);
     };
   }, [isLoaded, user]);

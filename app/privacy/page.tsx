@@ -160,8 +160,7 @@ export default function PrivacyPolicyPage() {
               injection attacks.
             </li>
             <li className="p-3.5 rounded-xl bg-[#231a16] border border-[#3d2c24]">
-              <strong className="text-[#f5efe6]">Statsig:</strong> Anonymized event telemetry (if enabled)
-              measuring response completion, token counts, and latency metrics without personal tracking.
+              <strong className="text-[#f5efe6]">Statsig:</strong> Pseudonymous event telemetry (strictly gated by your explicit analytics consent). For authenticated users, events are pseudonymously associated with your Clerk User ID to measure feature adoption, stream failure rates, and benchmark conversion funnels. For anonymous guests, events are associated with an unlinked session identifier. Telemetry requests without active consent are blocked on both client and server.
             </li>
           </ul>
         </section>
@@ -173,19 +172,19 @@ export default function PrivacyPolicyPage() {
             <span>3. Cookies & Local Storage</span>
           </h2>
           <p className="text-sm text-[#d4c3b3] leading-relaxed">
-            We use both cookies and browser local storage with clear boundaries:
+            We use cookies and browser local storage with transparent boundaries and default-deny protection:
           </p>
           <div className="space-y-3 text-xs text-[#d4c3b3]">
             <div className="p-3.5 rounded-xl bg-[#231a16] border border-[#3d2c24]">
-              <strong className="text-[#f5efe6]">Strictly Necessary:</strong> Clerk authentication cookies
-              and the anonymous benchmark ownership token (
+              <strong className="text-[#f5efe6]">Strictly Necessary (Always Active):</strong> Clerk authentication cookies
+              and your anonymous benchmark ownership token (
               <code className="text-[#f5efe6] bg-[#1a1412] px-1 py-0.5 rounded">
                 swag_flow_anon_token
               </code>
-              ). These are required for the application to function.
+              ). These are required for thread authorization and preventing duplicate votes.
             </div>
             <div className="p-3.5 rounded-xl bg-[#231a16] border border-[#3d2c24]">
-              <strong className="text-[#f5efe6]">Functional Storage:</strong> Cached active turns (
+              <strong className="text-[#f5efe6]">Functional Storage (Default Denied):</strong> Cached active turns (
               <code className="text-[#f5efe6] bg-[#1a1412] px-1 py-0.5 rounded">
                 arena_cache_*
               </code>
@@ -193,12 +192,12 @@ export default function PrivacyPolicyPage() {
               <code className="text-[#f5efe6] bg-[#1a1412] px-1 py-0.5 rounded">
                 swag_flow_anon_threads
               </code>
-              ) saved locally so you do not lose work during page refreshes.
+              ). This is disabled until you explicitly opt in, and withdrawing consent immediately purges all cached data from your browser.
             </div>
             <div className="p-3.5 rounded-xl bg-[#231a16] border border-[#3d2c24]">
-              <strong className="text-[#f5efe6]">Analytics Telemetry:</strong> Anonymized stream performance
+              <strong className="text-[#f5efe6]">Analytics Telemetry (Default Denied):</strong> Anonymized stream performance
               events sent to <code className="text-[#f5efe6] bg-[#1a1412] px-1 py-0.5 rounded">/api/arena/telemetry</code>.
-              These are blocked entirely unless you provide explicit consent.
+              These are blocked by both client hooks and server-side HTTP 403 enforcement unless you provide explicit consent.
             </div>
           </div>
           <div className="pt-2">
@@ -217,20 +216,30 @@ export default function PrivacyPolicyPage() {
         <section className="space-y-4 border-t border-[#3d2c24] pt-8">
           <h2 className="text-xl font-bold text-[#f5efe6] flex items-center gap-2.5">
             <Trash2 size={20} className="text-[#c85a32]" />
-            <span>4. Data Retention, Export & Deletion</span>
+            <span>4. Verified Retention & Deletion Schedules</span>
           </h2>
           <p className="text-sm text-[#d4c3b3] leading-relaxed">
-            You retain absolute sovereignty over your content:
+            Our infrastructure adheres to defined, verifiable data lifecycles:
           </p>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs text-[#d4c3b3]">
             <div className="p-4 rounded-xl bg-[#231a16] border border-[#3d2c24] space-y-2">
               <h3 className="font-bold text-[#f5efe6] flex items-center gap-1.5">
                 <Trash2 size={14} className="text-[#c85a32]" />
-                <span>Thread Deletion</span>
+                <span>Threads & Messages</span>
               </h3>
               <p className="leading-relaxed">
-                Deleting any thread in the sidebar permanently removes the thread, all associated
-                prompt messages, model output tokens, and turns from our database.
+                Persisted in PostgreSQL until you manually delete the thread via the sidebar trash action,
+                which cascades and permanently deletes all prompts, responses, and votes.
+              </p>
+            </div>
+            <div className="p-4 rounded-xl bg-[#231a16] border border-[#3d2c24] space-y-2">
+              <h3 className="font-bold text-[#f5efe6] flex items-center gap-1.5">
+                <Shield size={14} className="text-[#c85a32]" />
+                <span>Bug Reports (90-Day Purge)</span>
+              </h3>
+              <p className="leading-relaxed">
+                Bug reports and attached diagnostic screenshots are automatically purged from the database
+                after 90 days.
               </p>
             </div>
             <div className="p-4 rounded-xl bg-[#231a16] border border-[#3d2c24] space-y-2">
@@ -240,7 +249,16 @@ export default function PrivacyPolicyPage() {
               </h3>
               <p className="leading-relaxed">
                 You can export complete conversation histories and benchmark turns at any time as JSON,
-                Markdown, or PDF using the built-in Export feature.
+                Markdown, or PDF using the built-in Export modal.
+              </p>
+            </div>
+            <div className="p-4 rounded-xl bg-[#231a16] border border-[#3d2c24] space-y-2">
+              <h3 className="font-bold text-[#f5efe6] flex items-center gap-1.5">
+                <Cookie size={14} className="text-[#c85a32]" />
+                <span>Telemetry Retention</span>
+              </h3>
+              <p className="leading-relaxed">
+                When permitted, telemetry events logged to Statsig expire automatically within 90 days.
               </p>
             </div>
           </div>
@@ -248,13 +266,35 @@ export default function PrivacyPolicyPage() {
 
         {/* 5. Contact & Privacy Requests */}
         <section className="space-y-4 border-t border-[#3d2c24] pt-8">
-          <h2 className="text-xl font-bold text-[#f5efe6]">5. Contact & Data Subject Rights</h2>
+          <h2 className="text-xl font-bold text-[#f5efe6]">5. Contact & Verified Privacy Requests</h2>
           <p className="text-sm text-[#d4c3b3] leading-relaxed">
-            Under GDPR, CCPA, and applicable data privacy frameworks, you have the right to request access
-            to, correction of, or permanent deletion of any personal data associated with your account.
-            To exercise your rights or ask questions, please file a ticket via our in-app Bug Report tool
-            or contact us through our official GitHub repository.
+            Under GDPR, CCPA, and applicable data protection regulations, you have the right to request access
+            to, correction of, or permanent erasure of any personal data associated with your account.
           </p>
+          <div className="p-4 rounded-xl bg-[#231a16] border border-[#3d2c24] space-y-3 text-xs text-[#d4c3b3]">
+            <p>
+              To exercise your rights or make a privacy inquiry, please submit your request through our monitored channels:
+            </p>
+            <ul className="list-disc pl-5 space-y-1">
+              <li>
+                <strong className="text-[#f5efe6]">GitHub Issue Tracker:</strong> File a privacy ticket at{" "}
+                <a
+                  href="https://github.com/G28I/swag-flow/issues"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-[#c85a32] underline hover:text-[#d96b43]"
+                >
+                  github.com/G28I/swag-flow/issues
+                </a>
+              </li>
+              <li>
+                <strong className="text-[#f5efe6]">In-App Bug & Support Modal:</strong> Use the Bug icon in the sidebar, select category &quot;Other&quot;, and label your message &quot;Privacy Inquiry&quot;.
+              </li>
+            </ul>
+            <p className="text-[11px] text-[#8c7a6e]">
+              We commit to acknowledging and processing verified data subject erasure and export requests within 30 calendar days.
+            </p>
+          </div>
         </section>
       </main>
 
