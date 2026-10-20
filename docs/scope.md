@@ -27,6 +27,7 @@ There are rough hand-drawn sketches for the arena screen, the leaderboard, and t
 | 7   | App shell & thread history                  | Slice 2    | completed |
 | 8   | Public thread visibility & sharing          | Slice 3    | completed |
 | 9   | Leaderboard: global & personal              | Slice 4    | completed |
+| 10  | Production readiness & launch checklist     | Slice 5    | pending   |
 
 ## Foundation
 
@@ -109,13 +110,49 @@ Two leaderboards from the same votes, one for everyone, one just for the signed-
 - [x] Decide the approach
 - [x] Build it
 
+## Slice 5: Production Readiness & Launch Checklist
+
+### 10. Production readiness & launch checklist (20 features)
+
+Implementing the complete production launch checklist across 5 phases:
+
+#### Phase 1: Legal & Compliance
+- [x] Privacy policy (`/privacy`) [Item 01]
+- [x] Terms & conditions (`/terms`) [Item 02]
+- [x] Cookie consent banner & preference management [Item 05]
+- [x] Site footer with legal links and cookie settings
+
+#### Phase 2: Security & Protection
+- [ ] Remove frontend secrets (audit client bundles & env variables) [Item 03]
+- [ ] Enforce HTTPS & security response headers (HSTS, CSP, X-Frame-Options) [Item 04]
+- [ ] Spam protection (Arcjet rate limiting, bot protection & form honeypots) [Item 18]
+
+#### Phase 3: SEO, Social & Discoverability
+- [ ] Meta titles/descriptions (dynamic page metadata, OpenGraph, Twitter) [Item 06]
+- [ ] Social preview image (custom branded social card) [Item 07]
+- [ ] Favicon (complete icon package: favicon, apple-icon, webmanifest) [Item 08]
+- [ ] Sitemap & robots.txt (search indexing routes) [Item 09]
+
+#### Phase 4: UX, Accessibility & Design Integrity
+- [ ] Image alt text (accessible alt and aria attributes on all images/icons) [Item 10]
+- [ ] Color contrast fixes (WCAG AA compliance for rust accents & coffee surfaces) [Item 13]
+- [ ] Mobile responsiveness (responsive audit across arena, leaderboard, and models) [Item 14]
+- [ ] Custom 404 page (friendly branded `not-found.tsx` with links) [Item 15]
+- [ ] Broken link fixes (full internal/external navigation audit) [Item 16]
+- [ ] Single clear CTA (primary high-contrast call-to-action per view) [Item 20]
+
+#### Phase 5: Performance, Validation & Telemetry
+- [ ] Image compression (optimized formats, sizes, and Next.js image loading) [Item 11]
+- [ ] Page load speed check (bundle audit, dynamic imports, font preloading) [Item 12]
+- [ ] Form validation (Zod schemas on frontend and API routes) [Item 17]
+- [ ] Analytics setup (Statsig/PostHog telemetry and privacy controls) [Item 19]
+
 ## Not doing right now
 
 Kept here so the plan stays honest about what's deliberately left out.
 
 - A "fastest" label on the leaderboard, tagging whichever model already has the best average speed, only for models with enough votes to mean anything. Nice to have, not required.
 - Giving each model's own little icon a distinct look instead of plain gray. Nice to have, not required.
-- Privacy policy and terms pages.
-- Rich link previews when a thread gets shared somewhere.
 - Any kind of admin or moderation page.
 - A public API for the leaderboard data. Nobody's asked for this.
+

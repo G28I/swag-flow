@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { publicReadAj } from "@/app/lib/arcjet";
 import { logStatsigEvent } from "@/app/lib/statsig";
+import { hasServerAnalyticsConsent } from "@/app/lib/cookieConsentServer";
 
 const ALLOWED_EVENTS = new Set([
   "prompt_submitted",
@@ -21,6 +22,14 @@ export async function POST(req: NextRequest) {
     const decision = await publicReadAj.protect(req);
     if (decision.isDenied()) {
       return NextResponse.json({ error: "Rate limit exceeded." }, { status: 429 });
+    }
+
+    // 2. Validate analytics cookie consent on the server
+    if (!hasServerAnalyticsConsent(req)) {
+      return NextResponse.json(
+        { error: "Analytics consent required." },
+        { status: 403 }
+      );
     }
 
     const isClerkConfigured =

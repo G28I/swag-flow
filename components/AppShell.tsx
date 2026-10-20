@@ -22,6 +22,7 @@ import {
   Bug,
 } from "lucide-react";
 import { getAnonToken } from "@/app/lib/anonToken";
+import { openCookiePreferencesModal, hasFunctionalConsent } from "@/app/lib/cookieConsent";
 import { BugReportModal } from "@/components/BugReportModal";
 
 interface ThreadItem {
@@ -53,7 +54,10 @@ export default function AppShell({ children, breadcrumb = "Arena" }: AppShellPro
 
   // Initialize theme from localStorage or document class
   useEffect(() => {
-    const stored = localStorage.getItem("theme");
+    let stored: string | null = null;
+    try {
+      stored = localStorage.getItem("theme");
+    } catch {}
     const shouldBeDark = stored
       ? stored === "dark"
       : document.documentElement.classList.contains("dark");
@@ -111,12 +115,16 @@ export default function AppShell({ children, breadcrumb = "Arena" }: AppShellPro
           if (!cancelled) setIsLoadingThreads(false);
         }
       } else {
-        try {
-          const local = localStorage.getItem("swag_flow_anon_threads");
-          if (local) setThreads(JSON.parse(local));
-          else setThreads([]);
-        } catch {
+        if (!hasFunctionalConsent()) {
           setThreads([]);
+        } else {
+          try {
+            const local = localStorage.getItem("swag_flow_anon_threads");
+            if (local) setThreads(JSON.parse(local));
+            else setThreads([]);
+          } catch {
+            setThreads([]);
+          }
         }
       }
     }
@@ -125,19 +133,28 @@ export default function AppShell({ children, breadcrumb = "Arena" }: AppShellPro
 
     const handleUpdate = () => {
       if (!user) {
+        if (!hasFunctionalConsent()) {
+          setThreads([]);
+          return;
+        }
         try {
           const local = localStorage.getItem("swag_flow_anon_threads");
           if (local) setThreads(JSON.parse(local));
-        } catch {}
+          else setThreads([]);
+        } catch {
+          setThreads([]);
+        }
       }
     };
 
     window.addEventListener("swag_flow_threads_updated", handleUpdate);
+    window.addEventListener("swag_flow_consent_updated", handleUpdate);
     window.addEventListener("storage", handleUpdate);
 
     return () => {
       cancelled = true;
       window.removeEventListener("swag_flow_threads_updated", handleUpdate);
+      window.removeEventListener("swag_flow_consent_updated", handleUpdate);
       window.removeEventListener("storage", handleUpdate);
     };
   }, [isLoaded, user]);
@@ -145,7 +162,9 @@ export default function AppShell({ children, breadcrumb = "Arena" }: AppShellPro
   const toggleTheme = () => {
     const nextDark = !isDarkMode;
     setIsDarkMode(nextDark);
-    localStorage.setItem("theme", nextDark ? "dark" : "light");
+    try {
+      localStorage.setItem("theme", nextDark ? "dark" : "light");
+    } catch {}
     if (nextDark) {
       document.documentElement.classList.add("dark");
       document.documentElement.classList.remove("light");
@@ -166,15 +185,17 @@ export default function AppShell({ children, breadcrumb = "Arena" }: AppShellPro
     // 1. Immediately remove thread from UI state
     setThreads((prev) => prev.filter((t) => t.id !== threadId));
 
-    // 2. Remove thread from local storage cache
-    try {
-      const local = localStorage.getItem("swag_flow_anon_threads");
-      if (local) {
-        const parsed = JSON.parse(local);
-        const updated = parsed.filter((t: { id: string }) => t.id !== threadId);
-        localStorage.setItem("swag_flow_anon_threads", JSON.stringify(updated));
-      }
-    } catch {}
+    // 2. Remove thread from local storage cache if functional storage is enabled
+    if (hasFunctionalConsent()) {
+      try {
+        const local = localStorage.getItem("swag_flow_anon_threads");
+        if (local) {
+          const parsed = JSON.parse(local);
+          const updated = parsed.filter((t: { id: string }) => t.id !== threadId);
+          localStorage.setItem("swag_flow_anon_threads", JSON.stringify(updated));
+        }
+      } catch {}
+    }
 
     // 3. Always send DELETE to backend API to remove thread from PostgreSQL database
     try {
@@ -352,6 +373,25 @@ export default function AppShell({ children, breadcrumb = "Arena" }: AppShellPro
               ))
             )}
           </div>
+        </div>
+
+        {/* Legal & Policy Links */}
+        <div className="px-4 py-2 border-t border-border-custom/50 flex items-center justify-between text-[11px] text-muted-foreground/75">
+          <Link href="/privacy" className="hover:text-foreground transition-colors">
+            Privacy
+          </Link>
+          <span>·</span>
+          <Link href="/terms" className="hover:text-foreground transition-colors">
+            Terms
+          </Link>
+          <span>·</span>
+          <button
+            type="button"
+            onClick={openCookiePreferencesModal}
+            className="hover:text-foreground transition-colors cursor-pointer"
+          >
+            Cookies
+          </button>
         </div>
 
         {/* Bottom User Area */}

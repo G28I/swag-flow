@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, Suspense } from "react";
+import { useState, useEffect, useRef, Suspense, useSyncExternalStore } from "react";
 import { useSearchParams } from "next/navigation";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -14,6 +14,12 @@ import HyperparameterDrawer, {
   Hyperparameters,
 } from "@/components/HyperparameterDrawer";
 import { getAnonToken } from "@/app/lib/anonToken";
+import {
+  hasAnalyticsConsent,
+  hasFunctionalConsent,
+  purgeOptionalStorage,
+  type ConsentPreferences,
+} from "@/app/lib/cookieConsent";
 import { getTurnComparisonInsights } from "@/app/lib/costEngine";
 import { SignInButton } from "@clerk/nextjs";
 import {
@@ -178,9 +184,45 @@ function ArenaContent() {
   const modelB = useModelStream();
   const modelC = useModelStream();
 
+function subscribeConsent(callback: () => void) {
+  if (typeof window === "undefined") return () => {};
+  window.addEventListener("swag_flow_consent_updated", callback);
+  window.addEventListener("storage", callback);
+  return () => {
+    window.removeEventListener("swag_flow_consent_updated", callback);
+    window.removeEventListener("storage", callback);
+  };
+}
+
+function getFunctionalConsentSnapshot(): boolean {
+  return hasFunctionalConsent();
+}
+
+function getServerFunctionalConsentSnapshot(): boolean {
+  return false;
+}
+
+  const canUseFunctionalStorage = useSyncExternalStore(
+    subscribeConsent,
+    getFunctionalConsentSnapshot,
+    getServerFunctionalConsentSnapshot
+  );
+
+  // Purge optional storage immediately when functional consent is withdrawn
+  useEffect(() => {
+    const handleConsentUpdated = (e: Event) => {
+      const customEvent = e as CustomEvent<ConsentPreferences>;
+      if (customEvent.detail && !customEvent.detail.functional) {
+        purgeOptionalStorage();
+      }
+    };
+    window.addEventListener("swag_flow_consent_updated", handleConsentUpdated);
+    return () => window.removeEventListener("swag_flow_consent_updated", handleConsentUpdated);
+  }, []);
+
   // Synchronize turns with localStorage to guard against page refresh data loss (token-bound)
   useEffect(() => {
-    if (turns.length > 0 && isOwner) {
+    if (canUseFunctionalStorage && turns.length > 0 && isOwner) {
       try {
         const anonToken = getAnonToken();
         const payload = {
@@ -192,7 +234,7 @@ function ArenaContent() {
         // Ignore storage limit errors
       }
     }
-  }, [turns, threadId, isOwner]);
+  }, [turns, threadId, isOwner, canUseFunctionalStorage]);
 
   // Read thread from query parameters and load thread history
   useEffect(() => {
@@ -378,15 +420,16 @@ function ArenaContent() {
             }
           );
 
-          setTurns(hydratedTurns);
-          try {
-            const currentToken = getAnonToken();
-            const payload = {
-              anonToken: currentToken,
-              turns: hydratedTurns,
-            };
-            localStorage.setItem(targetKey, JSON.stringify(payload));
-          } catch {}
+          if (hasFunctionalConsent()) {
+            try {
+              const currentToken = getAnonToken();
+              const payload = {
+                anonToken: currentToken,
+                turns: hydratedTurns,
+              };
+              localStorage.setItem(targetKey, JSON.stringify(payload));
+            } catch {}
+          }
         }
       } catch (err) {
         console.error("Failed to load thread history:", err);
@@ -438,6 +481,9 @@ function ArenaContent() {
     eventName: string,
     metadata?: Record<string, string | number | boolean | null | undefined>
   ) => {
+    if (!hasAnalyticsConsent()) {
+      return;
+    }
     fetch("/api/arena/telemetry", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -942,9 +988,9 @@ function ArenaContent() {
       setTurns((prev) => prev.map((t) => (t.id === turnId ? { ...t, promptId: parentId } : t)));
 
       // 2. Fire OpenRouter streaming connections concurrently for active slots
-      activeModels.forEach((model, idx) => {
+      const streamPromises = activeModels.map((model, idx) => {
         const hook = idx === 0 ? modelA : idx === 1 ? modelB : modelC;
-        hook
+        return hook
           .startStream(currentThreadId, parentId, model.id, {
             systemPrompt: hyperparameters.systemPrompt,
             temperature: hyperparameters.temperature,
@@ -956,9 +1002,13 @@ function ArenaContent() {
           });
       });
 
+      Promise.allSettled(streamPromises).then(() => {
+        setStreamingTurnId(null);
+      });
+
       // Defer non-critical local storage history sync to background microtask
       setTimeout(() => {
-        if (typeof window !== "undefined") {
+        if (typeof window !== "undefined" && hasFunctionalConsent()) {
           try {
             const existing = JSON.parse(localStorage.getItem("swag_flow_anon_threads") || "[]");
             const title = userPrompt.length > 35 ? userPrompt.substring(0, 35) + "..." : userPrompt;
@@ -1015,17 +1065,11 @@ function ArenaContent() {
 
   const isStreamingAny = modelA.isStreaming || modelB.isStreaming || modelC.isStreaming;
 
-  // Clear stale streamingTurnId when all streams are complete
-  useEffect(() => {
-    if (!isStreamingAny && streamingTurnId) {
-      setStreamingTurnId(null);
-    }
-  }, [isStreamingAny, streamingTurnId]);
-
   const handleStopAll = () => {
     modelA.abort();
     modelB.abort();
     modelC.abort();
+    setStreamingTurnId(null);
   };
 
   // Sync current active streaming hooks into target turn card in the feed

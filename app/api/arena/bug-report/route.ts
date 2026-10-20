@@ -1,15 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import prisma from "@/app/lib/prisma";
-import { normalizeAnonToken, getEffectiveOwnerId } from "@/app/lib/authHelper";
+import { getEffectiveOwnerId } from "@/app/lib/authHelper";
 
 export async function POST(req: NextRequest) {
   try {
     const isClerkConfigured = Boolean(
       process.env.CLERK_SECRET_KEY &&
-        process.env.CLERK_SECRET_KEY !== "sk_test_placeholder" &&
-        process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY &&
-        process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY !== "pk_test_placeholder"
+      process.env.CLERK_SECRET_KEY !== "sk_test_placeholder" &&
+      process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY &&
+      process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY !== "pk_test_placeholder"
     );
 
     let userId: string | null = null;
@@ -28,6 +28,18 @@ export async function POST(req: NextRequest) {
     }
 
     const effectiveUserId = getEffectiveOwnerId(userId, anonToken);
+
+    // Enforce 90-day retention schedule: delete bug reports older than 90 days
+    const ninetyDaysAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
+    await prisma.bugReport.deleteMany({
+      where: {
+        createdAt: {
+          lt: ninetyDaysAgo,
+        },
+      },
+    }).catch((purgeErr) => {
+      console.warn("Notice: 90-day bug report purge skipped:", purgeErr);
+    });
 
     const report = await prisma.bugReport.create({
       data: {

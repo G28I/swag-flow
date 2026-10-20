@@ -3,6 +3,7 @@ import { auth } from "@clerk/nextjs/server";
 import prisma from "@/app/lib/prisma";
 import { voteAj } from "@/app/lib/arcjet";
 import { logStatsigEvent } from "@/app/lib/statsig";
+import { hasServerAnalyticsConsent } from "@/app/lib/cookieConsentServer";
 import { normalizeAnonToken, isThreadOwner } from "@/app/lib/authHelper";
 
 export async function POST(req: NextRequest) {
@@ -128,13 +129,15 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    // 9. Log telemetry event for evaluation vote
-    logStatsigEvent(effectiveUserId, "model_voted", {
-      threadId,
-      promptId,
-      votedModel: votedModel || "tie",
-      participatingModels: models.join(","),
-    }).catch(() => {});
+    // 9. Log telemetry event for evaluation vote if user consented to analytics
+    if (hasServerAnalyticsConsent(req)) {
+      logStatsigEvent(effectiveUserId, "model_voted", {
+        threadId,
+        promptId,
+        votedModel: votedModel || "tie",
+        participatingModels: models.join(","),
+      }).catch(() => {});
+    }
 
     return NextResponse.json({
       success: true,

@@ -67,7 +67,7 @@ export function computeTokenDiff(oldText: string, newText: string): DiffToken[] 
   const n = midOld.length;
   const m = midNew.length;
 
-  let midDiff: DiffToken[] = [];
+  const midDiff: DiffToken[] = [];
 
   // Safety cap to prevent unbounded O(n*m) memory matrix construction for huge texts
   if (n * m > 100000) {

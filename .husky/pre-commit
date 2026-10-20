@@ -1,3 +1,6 @@
 #!/bin/sh
-cd swag-flow
+if [ -f "swag-flow/package.json" ]; then
+  cd swag-flow
+fi
 npx lint-staged
+

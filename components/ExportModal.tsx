@@ -11,6 +11,7 @@ import {
   downloadFile,
   printPDFReport,
 } from "@/app/lib/exportEngine";
+import type { StreamMetrics } from "@/app/arena/useModelStream";
 
 interface ExportModalProps {
   isOpen: boolean;
@@ -24,9 +25,9 @@ interface ExportModalProps {
     activeCount: number;
     models: Array<{ id: string; name: string }>;
     responses: {
-      modelA: { text: string; error: string | null; metrics: any; messageId: string | null; config?: any };
-      modelB: { text: string; error: string | null; metrics: any; messageId: string | null; config?: any };
-      modelC: { text: string; error: string | null; metrics: any; messageId: string | null; config?: any };
+      modelA: { text: string; error: string | null; metrics: StreamMetrics | null; messageId: string | null; config?: Record<string, unknown> | null };
+      modelB: { text: string; error: string | null; metrics: StreamMetrics | null; messageId: string | null; config?: Record<string, unknown> | null };
+      modelC: { text: string; error: string | null; metrics: StreamMetrics | null; messageId: string | null; config?: Record<string, unknown> | null };
     };
     promptId?: string;
   }>;

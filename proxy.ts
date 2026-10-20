@@ -5,6 +5,8 @@ const isPublicRoute = createRouteMatcher([
   "/",
   "/leaderboard",
   "/models",
+  "/privacy",
+  "/terms",
   "/sign-in(.*)",
   "/sign-up(.*)",
   // Endpoints that support public access
