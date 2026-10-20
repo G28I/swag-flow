@@ -54,7 +54,10 @@ export default function AppShell({ children, breadcrumb = "Arena" }: AppShellPro
 
   // Initialize theme from localStorage or document class
   useEffect(() => {
-    const stored = localStorage.getItem("theme");
+    let stored: string | null = null;
+    try {
+      stored = localStorage.getItem("theme");
+    } catch {}
     const shouldBeDark = stored
       ? stored === "dark"
       : document.documentElement.classList.contains("dark");
@@ -159,7 +162,9 @@ export default function AppShell({ children, breadcrumb = "Arena" }: AppShellPro
   const toggleTheme = () => {
     const nextDark = !isDarkMode;
     setIsDarkMode(nextDark);
-    localStorage.setItem("theme", nextDark ? "dark" : "light");
+    try {
+      localStorage.setItem("theme", nextDark ? "dark" : "light");
+    } catch {}
     if (nextDark) {
       document.documentElement.classList.add("dark");
       document.documentElement.classList.remove("light");
@@ -180,15 +185,17 @@ export default function AppShell({ children, breadcrumb = "Arena" }: AppShellPro
     // 1. Immediately remove thread from UI state
     setThreads((prev) => prev.filter((t) => t.id !== threadId));
 
-    // 2. Remove thread from local storage cache
-    try {
-      const local = localStorage.getItem("swag_flow_anon_threads");
-      if (local) {
-        const parsed = JSON.parse(local);
-        const updated = parsed.filter((t: { id: string }) => t.id !== threadId);
-        localStorage.setItem("swag_flow_anon_threads", JSON.stringify(updated));
-      }
-    } catch {}
+    // 2. Remove thread from local storage cache if functional storage is enabled
+    if (hasFunctionalConsent()) {
+      try {
+        const local = localStorage.getItem("swag_flow_anon_threads");
+        if (local) {
+          const parsed = JSON.parse(local);
+          const updated = parsed.filter((t: { id: string }) => t.id !== threadId);
+          localStorage.setItem("swag_flow_anon_threads", JSON.stringify(updated));
+        }
+      } catch {}
+    }
 
     // 3. Always send DELETE to backend API to remove thread from PostgreSQL database
     try {

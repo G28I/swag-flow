@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, Suspense } from "react";
+import { useState, useEffect, useRef, Suspense, useSyncExternalStore } from "react";
 import { useSearchParams } from "next/navigation";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -184,21 +184,29 @@ function ArenaContent() {
   const modelB = useModelStream();
   const modelC = useModelStream();
 
-  // Synchronize turns with localStorage to guard against page refresh data loss (token-bound)
-  useEffect(() => {
-    if (turns.length > 0 && isOwner && hasFunctionalConsent()) {
-      try {
-        const anonToken = getAnonToken();
-        const payload = {
-          anonToken,
-          turns,
-        };
-        localStorage.setItem(`arena_cache_${threadId || "current"}`, JSON.stringify(payload));
-      } catch {
-        // Ignore storage limit errors
-      }
-    }
-  }, [turns, threadId, isOwner]);
+function subscribeConsent(callback: () => void) {
+  if (typeof window === "undefined") return () => {};
+  window.addEventListener("swag_flow_consent_updated", callback);
+  window.addEventListener("storage", callback);
+  return () => {
+    window.removeEventListener("swag_flow_consent_updated", callback);
+    window.removeEventListener("storage", callback);
+  };
+}
+
+function getFunctionalConsentSnapshot(): boolean {
+  return hasFunctionalConsent();
+}
+
+function getServerFunctionalConsentSnapshot(): boolean {
+  return false;
+}
+
+  const canUseFunctionalStorage = useSyncExternalStore(
+    subscribeConsent,
+    getFunctionalConsentSnapshot,
+    getServerFunctionalConsentSnapshot
+  );
 
   // Purge optional storage immediately when functional consent is withdrawn
   useEffect(() => {
@@ -211,6 +219,22 @@ function ArenaContent() {
     window.addEventListener("swag_flow_consent_updated", handleConsentUpdated);
     return () => window.removeEventListener("swag_flow_consent_updated", handleConsentUpdated);
   }, []);
+
+  // Synchronize turns with localStorage to guard against page refresh data loss (token-bound)
+  useEffect(() => {
+    if (canUseFunctionalStorage && turns.length > 0 && isOwner) {
+      try {
+        const anonToken = getAnonToken();
+        const payload = {
+          anonToken,
+          turns,
+        };
+        localStorage.setItem(`arena_cache_${threadId || "current"}`, JSON.stringify(payload));
+      } catch {
+        // Ignore storage limit errors
+      }
+    }
+  }, [turns, threadId, isOwner, canUseFunctionalStorage]);
 
   // Read thread from query parameters and load thread history
   useEffect(() => {

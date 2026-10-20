@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { publicReadAj } from "@/app/lib/arcjet";
 import { logStatsigEvent } from "@/app/lib/statsig";
+import { hasServerAnalyticsConsent } from "@/app/lib/cookieConsentServer";
 
 const ALLOWED_EVENTS = new Set([
   "prompt_submitted",
@@ -24,20 +25,7 @@ export async function POST(req: NextRequest) {
     }
 
     // 2. Validate analytics cookie consent on the server
-    const consentCookie = req.cookies.get("swag_flow_cookie_consent")?.value;
-    let hasAnalyticsConsent = false;
-    if (consentCookie) {
-      try {
-        const parsed = JSON.parse(decodeURIComponent(consentCookie));
-        if (parsed.analytics === true) {
-          hasAnalyticsConsent = true;
-        }
-      } catch {
-        hasAnalyticsConsent = false;
-      }
-    }
-
-    if (!hasAnalyticsConsent) {
+    if (!hasServerAnalyticsConsent(req)) {
       return NextResponse.json(
         { error: "Analytics consent required." },
         { status: 403 }

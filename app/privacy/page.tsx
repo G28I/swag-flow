@@ -160,7 +160,7 @@ export default function PrivacyPolicyPage() {
               injection attacks.
             </li>
             <li className="p-3.5 rounded-xl bg-[#231a16] border border-[#3d2c24]">
-              <strong className="text-[#f5efe6]">Statsig:</strong> Pseudonymous event telemetry (strictly gated by your explicit analytics consent). For authenticated users, events are pseudonymously associated with your Clerk User ID to measure feature adoption, stream failure rates, and benchmark conversion funnels. For anonymous guests, events are associated with an unlinked session identifier. Telemetry requests without active consent are blocked on both client and server.
+              <strong className="text-[#f5efe6]">Statsig:</strong> Product and performance telemetry (strictly gated by your explicit analytics consent). When enabled, events pass your Clerk account identifier unchanged as the <code className="text-[#f5efe6] bg-[#1a1412] px-1 py-0.5 rounded">userID</code> for signed-in accounts to analyze feature adoption, stream drops, and benchmark funnels. For anonymous guests, events pass an unlinked random session identifier. No passwords, emails, profile attributes, or prompt text are transmitted to Statsig. Telemetry calls on both client and server (prompts, votes, metrics) are completely suppressed when analytics consent is absent or disabled.
             </li>
           </ul>
         </section>

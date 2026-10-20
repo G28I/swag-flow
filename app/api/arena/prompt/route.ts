@@ -3,6 +3,7 @@ import { auth } from "@clerk/nextjs/server";
 import { promptAj } from "@/app/lib/arcjet";
 import prisma from "@/app/lib/prisma";
 import { logStatsigEvent } from "@/app/lib/statsig";
+import { hasServerAnalyticsConsent } from "@/app/lib/cookieConsentServer";
 import {
   normalizeAnonToken,
   getEffectiveOwnerId,
@@ -117,12 +118,14 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    // Log telemetry event for prompt creation
-    logStatsigEvent(anonOwnerId || "anonymous", "prompt_submitted", {
-      threadId: targetThreadId,
-      promptId: userMessage.id,
-      promptLength: prompt.length,
-    }).catch(() => {});
+    // Log telemetry event for prompt creation if user consented to analytics
+    if (hasServerAnalyticsConsent(req)) {
+      logStatsigEvent(anonOwnerId || "anonymous", "prompt_submitted", {
+        threadId: targetThreadId,
+        promptId: userMessage.id,
+        promptLength: prompt.length,
+      }).catch(() => {});
+    }
 
     return NextResponse.json({
       threadId: targetThreadId,

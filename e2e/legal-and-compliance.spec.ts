@@ -1,13 +1,6 @@
 import { test, expect } from "@playwright/test";
 
 test.describe("Phase 1: Legal & Compliance", () => {
-  test.beforeEach(async ({ page }) => {
-    // Clear localStorage to simulate fresh user visit
-    await page.addInitScript(() => {
-      window.localStorage.clear();
-    });
-  });
-
   test("Privacy Policy page (/privacy) displays actual data practices, pseudonymous telemetry, and verified retention", async ({
     page,
   }) => {
@@ -23,7 +16,7 @@ test.describe("Phase 1: Legal & Compliance", () => {
     await expect(page.getByText("Prompts & Model Responses")).toBeVisible();
     await expect(page.getByText("Benchmark Votes & Telemetry")).toBeVisible();
     await expect(page.getByText("OpenRouter:")).toBeVisible();
-    await expect(page.getByText("Pseudonymous event telemetry")).toBeVisible();
+    await expect(page.getByText("Product and performance telemetry")).toBeVisible();
 
     // Verify retention schedules & verified contact
     await expect(page.getByText("Verified Retention & Deletion Schedules")).toBeVisible();
@@ -87,7 +80,7 @@ test.describe("Phase 1: Legal & Compliance", () => {
     await expect(page).toHaveURL("/");
   });
 
-  test("Cookie Consent Banner appears, allows customization, and persists choices", async ({
+  test("Cookie Consent Banner appears, allows customization, and persists choices across reloads", async ({
     page,
   }) => {
     await page.goto("/");
@@ -110,9 +103,17 @@ test.describe("Phase 1: Legal & Compliance", () => {
     const functionalToggle = dialog.getByRole("checkbox", {
       name: /Functional Storage/i,
     });
+    const analyticsToggle = dialog.getByRole("checkbox", {
+      name: /Analytics.*Telemetry/i,
+    });
     await expect(functionalToggle).toBeVisible();
+    await expect(analyticsToggle).toBeVisible();
 
-    // Test saving preferences
+    // Modify choices: uncheck functional, check analytics
+    await functionalToggle.setChecked(false, { force: true });
+    await analyticsToggle.setChecked(true, { force: true });
+
+    // Save preferences
     const saveBtn = dialog.getByRole("button", { name: "Save Preferences" });
     await expect(saveBtn).toBeVisible();
     await saveBtn.click();
@@ -121,21 +122,33 @@ test.describe("Phase 1: Legal & Compliance", () => {
     await expect(dialog).not.toBeVisible();
     await expect(banner).not.toBeVisible();
 
-    // Verify localStorage persistence
+    // Verify localStorage persistence matches exact chosen boolean values
     const savedConsent = await page.evaluate(() =>
       window.localStorage.getItem("swag_flow_cookie_consent")
     );
     expect(savedConsent).not.toBeNull();
     const parsed = JSON.parse(savedConsent || "{}");
     expect(parsed.necessary).toBe(true);
-    expect(typeof parsed.functional).toBe("boolean");
-    expect(typeof parsed.analytics).toBe("boolean");
+    expect(parsed.functional).toBe(false);
+    expect(parsed.analytics).toBe(true);
+
+    // Verify persistence across page reload
+    await page.reload();
+    await expect(banner).not.toBeVisible();
 
     // Test reopening cookie settings from the sidebar "Cookies" link
     const cookiesSidebarLink = page.getByRole("button", { name: "Cookies" });
     await expect(cookiesSidebarLink).toBeVisible();
     await cookiesSidebarLink.click();
-    await expect(page.getByRole("dialog")).toBeVisible();
+    await expect(dialog).toBeVisible();
+
+    // Assert that the saved toggle choices remain preserved inside the modal
+    await expect(functionalToggle).not.toBeChecked();
+    await expect(analyticsToggle).toBeChecked();
+
+    // Close dialog
+    await page.keyboard.press("Escape");
+    await expect(dialog).not.toBeVisible();
   });
 
   test("Rejecting non-essential storage disables functional cache writes without breaking Arena", async ({
@@ -280,5 +293,58 @@ test.describe("Phase 1: Legal & Compliance", () => {
       },
     });
     expect(resEnabled.status()).toBe(200);
+  });
+
+  test("Preferences dialog traps keyboard focus and restores focus upon closing", async ({
+    page,
+  }) => {
+    await page.goto("/");
+
+    // Open from banner Customize button to test focus moving in and restoring
+    const customizeBtn = page.getByRole("button", { name: "Customize" });
+    await expect(customizeBtn).toBeVisible();
+    await customizeBtn.focus();
+    await page.keyboard.press("Enter");
+
+    const dialog = page.getByRole("dialog");
+    await expect(dialog).toBeVisible();
+
+    // Verify focus moved into dialog close button
+    const closeBtn = dialog.getByLabel("Close cookie preferences");
+    await expect(closeBtn).toBeFocused();
+
+    // Press Tab and verify focus remains within the dialog
+    await page.keyboard.press("Tab");
+    const activeInDialog = await page.evaluate(() => {
+      const active = document.activeElement;
+      return active?.closest('[role="dialog"]') !== null;
+    });
+    expect(activeInDialog).toBe(true);
+
+    // Press Escape to close modal
+    await page.keyboard.press("Escape");
+    await expect(dialog).not.toBeVisible();
+
+    // Verify focus is restored to the trigger button
+    await expect(customizeBtn).toBeFocused();
+  });
+
+  test("Application remains functional and does not crash when storage is blocked", async ({
+    page,
+  }) => {
+    // Simulate throwing SecurityError when localStorage is blocked by browser policy
+    await page.addInitScript(() => {
+      Object.defineProperty(window, "localStorage", {
+        get: () => {
+          throw new DOMException("Access is denied for this document", "SecurityError");
+        },
+      });
+    });
+
+    await page.goto("/privacy");
+    await expect(page.locator("h1")).toHaveText("Privacy Policy");
+
+    await page.goto("/");
+    await expect(page.getByText("Cookie & Data Preferences")).toBeVisible();
   });
 });
